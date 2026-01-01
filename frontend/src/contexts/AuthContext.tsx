@@ -90,8 +90,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const login = async (credentials: LoginCredentials) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:92',message:'Login function entry',data:{apiBaseUrl:API_BASE_URL,viteApiUrl:import.meta.env.VITE_API_URL,isDev:import.meta.env.DEV,mode:import.meta.env.MODE},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      const loginUrl = `${API_BASE_URL}/auth/login`;
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:96',message:'Before fetch request',data:{loginUrl:loginUrl,apiBaseUrl:API_BASE_URL},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      const response = await fetch(loginUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -99,18 +106,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify(credentials),
       });
 
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:107',message:'After fetch response',data:{status:response.status,statusText:response.statusText,contentType:response.headers.get('content-type'),url:response.url},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
+
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
         const apiUrl = API_BASE_URL || 'backend server';
-        throw new Error(`Cannot connect to API server at ${apiUrl}. Please check your VITE_API_URL environment variable and ensure the backend is running.`);
+        const errorMsg = `Cannot connect to API server at ${apiUrl}. Please check your VITE_API_URL environment variable and ensure the backend is running.`;
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:112',message:'Throwing error - non-JSON response',data:{errorMessage:errorMsg,contentType:contentType,apiUrl:apiUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
+        throw new Error(errorMsg);
       }
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({ error: 'Login failed' }));
-        throw new Error(error.error || 'Login failed');
+        const errorMsg = error.error || 'Login failed';
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:118',message:'Response not OK - throwing error',data:{errorMessage:errorMsg,status:response.status,errorData:error},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
+        throw new Error(errorMsg);
       }
 
       const data = await response.json();
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:125',message:'Login successful',data:{hasToken:!!data.token,hasUser:!!data.user},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+      // #endregion
       localStorage.setItem('auth_token', data.token);
       
       setUser(data.user);
@@ -123,6 +145,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         expiresAt: data.expiresAt,
       });
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : '';
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:132',message:'Login catch block - error thrown',data:{errorMessage:errorMessage,errorStack:errorStack,containsPort3002:errorMessage.includes('3002'),containsPort3002Lower:errorMessage.toLowerCase().includes('3002')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
+      // #endregion
       console.error('Login error:', error);
       throw error;
     }

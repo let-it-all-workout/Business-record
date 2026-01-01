@@ -192,14 +192,31 @@ async function hashPassword(password) {
 
 // Helper function to verify passwords (supports both bcrypt and legacy SHA256)
 async function verifyPassword(password, hash) {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:194',message:'verifyPassword entry',data:{hashStartsWith$2:hash?.startsWith('$2'),hashLength:hash?.length,hashPreview:hash?.substring(0,20)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'K'})}).catch(()=>{});
+  // #endregion
   // Check if hash is bcrypt format (starts with $2a$, $2b$, or $2y$)
   if (hash.startsWith('$2')) {
-    return await bcrypt.compare(password, hash);
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:197',message:'Using bcrypt comparison',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'L'})}).catch(()=>{});
+    // #endregion
+    const result = await bcrypt.compare(password, hash);
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:197',message:'Bcrypt comparison result',data:{result:result},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'M'})}).catch(()=>{});
+    // #endregion
+    return result;
   }
   
   // Legacy SHA256 support for migration
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:201',message:'Using SHA256 comparison',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'N'})}).catch(()=>{});
+  // #endregion
   const sha256Hash = crypto.createHash('sha256').update(password).digest('hex');
-  return sha256Hash === hash;
+  const result = sha256Hash === hash;
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:202',message:'SHA256 comparison result',data:{result:result},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'O'})}).catch(()=>{});
+  // #endregion
+  return result;
 }
 
 // Helper function to check if password hash needs migration (SHA256 -> bcrypt)
@@ -336,35 +353,66 @@ router.post('/register', registerLimiter, async (req, res) => {
 
 // Login
 router.post('/login', loginLimiter, async (req, res) => {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:338',message:'Login route entry',data:{username:req.body?.username,hasPassword:!!req.body?.password},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   try {
     const { username, password } = req.body;
 
     if (!username || !password) {
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:343',message:'Missing username or password',data:{hasUsername:!!username,hasPassword:!!password},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       return res.status(400).json({ error: 'Username and password required' });
     }
 
     // Input validation
     if (typeof username !== 'string' || username.length < 1 || username.length > 50) {
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:348',message:'Invalid username format',data:{usernameType:typeof username,usernameLength:username?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
       return res.status(400).json({ error: 'Invalid username' });
     }
     if (typeof password !== 'string' || password.length < 1) {
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:351',message:'Invalid password format',data:{passwordType:typeof password,passwordLength:password?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
       return res.status(400).json({ error: 'Invalid password' });
     }
 
     // Get user by username
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:355',message:'Querying user from database',data:{searchUsername:username},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
     const user = db.prepare(`
       SELECT id, username, email, full_name, role, is_active, business_id, password_hash
       FROM users
       WHERE username = ?
     `).get(username);
 
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:360',message:'User query result',data:{userFound:!!user,username:user?.username,role:user?.role,isActive:user?.is_active,hashType:user?.password_hash?.substring(0,10),hashLength:user?.password_hash?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+    // #endregion
+
     if (!user || !user.is_active) {
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:362',message:'User not found or inactive',data:{userFound:!!user,isActive:user?.is_active},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
+      // #endregion
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     // Verify password (supports both bcrypt and legacy SHA256)
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:366',message:'Before password verification',data:{hashStartsWith$2:user.password_hash?.startsWith('$2'),hashLength:user.password_hash?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
+    // #endregion
     const passwordValid = await verifyPassword(password, user.password_hash);
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:367',message:'Password verification result',data:{passwordValid:passwordValid},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
+    // #endregion
     if (!passwordValid) {
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:368',message:'Password verification failed',data:{hashType:user.password_hash?.substring(0,10)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
+      // #endregion
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 

@@ -12,19 +12,36 @@ const PORT = process.env.PORT || 3002;
 
 // Middleware
 // CORS configuration - restrict to allowed origins
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(url => url.trim()) || ['http://localhost:5173', 'http://localhost:3000'];
+const defaultOrigins = ['http://localhost:5173', 'http://localhost:3000'];
+const envOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(url => url.trim()) || [];
+const allowedOrigins = [...defaultOrigins, ...envOrigins];
+
+// Also allow all Vercel preview and production domains
+const vercelPatterns = [
+  /^https:\/\/.*\.vercel\.app$/,
+  /^https:\/\/.*\.vercel\.app\/.*$/
+];
+
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, Postman, etc.) in development
     if (!origin && process.env.NODE_ENV !== 'production') {
       return callback(null, true);
     }
-    // In production, allow requests from allowed origins or if no origin (for server-to-server)
+    
+    // Check if origin matches allowed list
     if (!origin || allowedOrigins.includes(origin) || allowedOrigins.some(allowed => origin?.startsWith(allowed))) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+      return callback(null, true);
     }
+    
+    // Check if origin matches Vercel pattern
+    if (origin && vercelPatterns.some(pattern => pattern.test(origin))) {
+      return callback(null, true);
+    }
+    
+    // Reject if not in allowed list
+    console.warn(`CORS blocked origin: ${origin}`);
+    callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],

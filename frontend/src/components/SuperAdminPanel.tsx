@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Business } from '../types';
 
+// Get API base URL
+const rawApiUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
+const API_BASE_URL = rawApiUrl.endsWith('/') ? rawApiUrl.slice(0, -1) : rawApiUrl;
+
 interface BusinessWithStats extends Business {
   owner_username?: string;
   owner_email?: string;
@@ -39,24 +43,45 @@ export default function SuperAdminPanel({
   const loadBusinesses = async () => {
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch('/api/auth/businesses', {
+      // #region agent log
+      const loadUrl = `${API_BASE_URL}/auth/businesses`;
+      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SuperAdminPanel.tsx:42',message:'Loading businesses',data:{apiBaseUrl:API_BASE_URL,loadUrl,hasToken:!!token},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
+      // #endregion
+      const response = await fetch(loadUrl, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
       });
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SuperAdminPanel.tsx:50',message:'Businesses response',data:{status:response.status,ok:response.ok,contentType:response.headers.get('content-type')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
+      // #endregion
 
       if (response.ok) {
         const contentType = response.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
           const data = await response.json();
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SuperAdminPanel.tsx:56',message:'Businesses loaded successfully',data:{count:data.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
+          // #endregion
           setBusinesses(data);
         } else {
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SuperAdminPanel.tsx:60',message:'Invalid content type',data:{contentType:response.headers.get('content-type')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'K'})}).catch(()=>{});
+          // #endregion
           setError('Invalid response from server');
         }
       } else {
+        // #region agent log
+        const errorText = await response.text().catch(() => '');
+        fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SuperAdminPanel.tsx:65',message:'Businesses load failed',data:{status:response.status,statusText:response.statusText,errorText:errorText.substring(0,200)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'L'})}).catch(()=>{});
+        // #endregion
         setError('Failed to load businesses');
       }
     } catch (err) {
+      // #region agent log
+      const errMsg = err instanceof Error ? err.message : String(err);
+      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SuperAdminPanel.tsx:70',message:'Businesses load error',data:{errorMessage:errMsg,errorType:err?.constructor?.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'M'})}).catch(()=>{});
+      // #endregion
       setError('Error loading businesses');
       console.error(err);
     } finally {

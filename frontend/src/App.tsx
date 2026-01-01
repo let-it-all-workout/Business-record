@@ -130,7 +130,10 @@ function App() {
       const loadBusinesses = async () => {
         try {
           const token = localStorage.getItem('auth_token');
-          const response = await fetch('/api/auth/businesses', {
+          // Use API_BASE_URL from environment
+          const rawApiUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
+          const API_BASE_URL = rawApiUrl.endsWith('/') ? rawApiUrl.slice(0, -1) : rawApiUrl;
+          const response = await fetch(`${API_BASE_URL}/auth/businesses`, {
             headers: {
               'Authorization': `Bearer ${token}`,
             },

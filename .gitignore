@@ -1,0 +1,70 @@
+# Dependencies
+node_modules/
+# Note: package-lock.json should be committed for consistent installs
+
+# Build outputs
+dist/
+frontend/dist/
+*.log
+
+# Database files (sensitive data)
+*.db
+backend/database/*.db
+backend/database/backups/
+*.sqlite
+*.sqlite3
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+*.env
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS files
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+.nyc_output/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Railway/Vercel
+.railway/
+.vercel/
+
+# Build artifacts
+build/
+*.tsbuildinfo
+

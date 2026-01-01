@@ -1,0 +1,63 @@
+# How to Change Super Admin Username and Password
+
+⚠️ **SECURITY NOTICE:** This is a template file. Do NOT commit actual credentials to version control.
+
+## Method 1: Using the Script (Easiest)
+
+### Change Username:
+```bash
+cd /path/to/novagadget
+node server/scripts/private/change-super-admin-username.js <new_username>
+```
+
+### Change Password:
+```bash
+node server/scripts/private/set-custom-password.js <new_password>
+```
+
+## Method 2: Direct Database Access
+
+### Using SQLite Command Line:
+
+1. **Change Username:**
+```bash
+cd /path/to/novagadget
+sqlite3 server/database/novagadget.db
+```
+
+Then run:
+```sql
+UPDATE users 
+SET username = 'your_new_username', updated_at = datetime('now')
+WHERE role = 'super_admin';
+```
+
+2. **Change Password:**
+```bash
+# Generate password hash (use bcrypt in production)
+node -e "const bcrypt = require('bcrypt'); bcrypt.hash('your_new_password', 12).then(h => console.log(h));"
+```
+
+Copy the hash, then:
+```sql
+UPDATE users 
+SET password_hash = 'paste_hash_here', updated_at = datetime('now')
+WHERE role = 'super_admin';
+```
+
+## Method 3: Check Current Credentials
+
+```bash
+cd /path/to/novagadget
+sqlite3 server/database/novagadget.db "SELECT username, email, role FROM users WHERE role = 'super_admin';"
+```
+
+## Security Best Practices
+
+1. **Use strong passwords** (minimum 12 characters, mixed case, numbers, symbols)
+2. **Change default passwords immediately** after setup
+3. **Never share credentials** via insecure channels
+4. **Use environment variables** for default credentials in production
+5. **Enable logging** to track credential changes
+
+

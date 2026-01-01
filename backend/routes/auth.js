@@ -384,6 +384,7 @@ router.post('/login', loginLimiter, async (req, res) => {
     // #region agent log
     fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:355',message:'Querying user from database',data:{searchUsername:username},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
     // #endregion
+    console.log(`[DEBUG] Login attempt - searching for username: "${username}"`);
     const user = db.prepare(`
       SELECT id, username, email, full_name, role, is_active, business_id, password_hash
       FROM users
@@ -393,11 +394,23 @@ router.post('/login', loginLimiter, async (req, res) => {
     // #region agent log
     fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:360',message:'User query result',data:{userFound:!!user,username:user?.username,role:user?.role,isActive:user?.is_active,hashType:user?.password_hash?.substring(0,10),hashLength:user?.password_hash?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
     // #endregion
+    console.log(`[DEBUG] User lookup result:`, {
+      found: !!user,
+      username: user?.username,
+      role: user?.role,
+      isActive: user?.is_active,
+      hashType: user?.password_hash?.substring(0, 10),
+      hashLength: user?.password_hash?.length
+    });
 
     if (!user || !user.is_active) {
       // #region agent log
       fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:362',message:'User not found or inactive',data:{userFound:!!user,isActive:user?.is_active},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
       // #endregion
+      console.log(`[DEBUG] Login failed - user not found or inactive:`, { userFound: !!user, isActive: user?.is_active });
+      // List all usernames for debugging
+      const allUsers = db.prepare('SELECT username, role, is_active FROM users').all();
+      console.log(`[DEBUG] All users in database:`, allUsers);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
@@ -405,14 +418,17 @@ router.post('/login', loginLimiter, async (req, res) => {
     // #region agent log
     fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:366',message:'Before password verification',data:{hashStartsWith$2:user.password_hash?.startsWith('$2'),hashLength:user.password_hash?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
     // #endregion
+    console.log(`[DEBUG] Verifying password - hash type: ${user.password_hash?.substring(0, 10)}...`);
     const passwordValid = await verifyPassword(password, user.password_hash);
     // #region agent log
     fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:367',message:'Password verification result',data:{passwordValid:passwordValid},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
     // #endregion
+    console.log(`[DEBUG] Password verification result: ${passwordValid ? 'VALID' : 'INVALID'}`);
     if (!passwordValid) {
       // #region agent log
       fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:368',message:'Password verification failed',data:{hashType:user.password_hash?.substring(0,10)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
       // #endregion
+      console.log(`[DEBUG] Login failed - password mismatch for user: ${user.username}`);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
@@ -532,6 +548,28 @@ router.post('/logout', verifyToken, (req, res) => {
   } catch (error) {
     console.error('Error logging out:', error);
     res.status(500).json({ error: 'Failed to logout' });
+  }
+});
+
+// Diagnostic endpoint - list all users with details (super admin only, for debugging)
+router.get('/users/debug', verifyToken, (req, res) => {
+  try {
+    if (!req.isSuperAdmin) {
+      return res.status(403).json({ error: 'Super admin access required' });
+    }
+    
+    const users = db.prepare(`
+      SELECT id, username, email, role, is_active, business_id, 
+             LENGTH(password_hash) as hash_length,
+             SUBSTR(password_hash, 1, 10) as hash_preview
+      FROM users
+      ORDER BY created_at DESC
+    `).all();
+    
+    res.json({ users, count: users.length });
+  } catch (error) {
+    console.error('Error in debug endpoint:', error);
+    res.status(500).json({ error: 'Failed to get users' });
   }
 });
 

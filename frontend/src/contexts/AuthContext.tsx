@@ -100,8 +100,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const loginUrl = `${API_BASE_URL}/auth/login`;
       // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:96',message:'Before fetch request',data:{loginUrl:loginUrl,apiBaseUrl:API_BASE_URL},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      const debugInfo = {
+        loginUrl: loginUrl,
+        apiBaseUrl: API_BASE_URL,
+        viteApiUrl: import.meta.env.VITE_API_URL,
+        hasTrailingSlash: API_BASE_URL.endsWith('/'),
+        rawApiUrl: import.meta.env.VITE_API_URL
+      };
+      console.log('🔍 [DEBUG] Login URL details:', debugInfo);
+      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:96',message:'Before fetch request',data:debugInfo,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
       // #endregion
+      
+      // Test backend connectivity first
+      try {
+        const healthUrl = `${API_BASE_URL}/health`;
+        console.log('🔍 [DEBUG] Testing backend health at:', healthUrl);
+        const healthCheck = await fetch(healthUrl, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        console.log('🔍 [DEBUG] Health check response:', {
+          status: healthCheck.status,
+          ok: healthCheck.ok,
+          url: healthCheck.url
+        });
+      } catch (healthError) {
+        console.error('🔍 [DEBUG] Health check failed:', healthError);
+        const apiUrl = API_BASE_URL || 'backend server';
+        throw new Error(`Cannot connect to API server at ${apiUrl}. Please check your VITE_API_URL environment variable and ensure the backend is running.`);
+      }
+      
       const response = await fetch(loginUrl, {
         method: 'POST',
         headers: {

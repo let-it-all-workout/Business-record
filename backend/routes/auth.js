@@ -130,18 +130,20 @@ function initializeAuthSchema() {
               console.log('   ⚠️  IMPORTANT: Change the default password immediately after first login!');
             } catch (insertError) {
               // #region agent log
-              const errorMsg = insertError.message || String(insertError);
-              const errorStack = insertError.stack || '';
-              fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:131',message:'Insert error caught',data:{errorMessage:errorMsg,errorStack:errorStack.substring(0,200),hasMessage:!!insertError.message,includesCheck:insertError.message?.includes('CHECK constraint')||false,includesCheckFailed:insertError.message?.includes('CHECK constraint failed')||false},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+              const errorMsg = insertError?.message || String(insertError) || '';
+              const errorStack = insertError?.stack || '';
+              const errorStrForLog = String(insertError);
+              fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:131',message:'Insert error caught',data:{errorMessage:errorMsg,errorString:errorStrForLog,errorStack:errorStack.substring(0,200),hasMessage:!!insertError?.message,errorType:insertError?.constructor?.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
               // #endregion
               
               // If insert fails due to CHECK constraint, the table needs to be recreated
               // Check for both "CHECK constraint" and "CHECK constraint failed" patterns
               // Also check the error string representation in case message is undefined
-              const errorStr = insertError.message || String(insertError) || '';
-              const isCheckConstraintError = errorStr.includes('CHECK constraint') || 
-                                            errorStr.includes('CHECK constraint failed') ||
-                                            errorStr.includes('role IN');
+              // Use multiple checks to catch all possible error formats (case-insensitive)
+              const errorStr = (insertError?.message || String(insertError) || '').toLowerCase();
+              const isCheckConstraintError = errorStr.includes('check constraint') || 
+                                            errorStr.includes('check constraint failed') ||
+                                            (errorStr.includes('role') && errorStr.includes('admin') && errorStr.includes('manager'));
               
               // #region agent log
               fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:140',message:'CHECK constraint detection',data:{isCheckConstraintError,errorMessage:errorMsg},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});

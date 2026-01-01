@@ -374,6 +374,7 @@ router.post('/register', registerLimiter, async (req, res) => {
     // Disable foreign key constraints BEFORE starting transaction
     db.exec('PRAGMA foreign_keys = OFF');
     
+    let result;
     try {
       const transaction = db.transaction(() => {
         // Step 1: Create user first (without business_id)
@@ -411,6 +412,11 @@ router.post('/register', registerLimiter, async (req, res) => {
     } finally {
       // Always re-enable foreign key constraints, even if transaction fails
       db.exec('PRAGMA foreign_keys = ON');
+    }
+
+    // If transaction failed, result will be undefined and error will be caught by outer catch
+    if (!result) {
+      throw new Error('Transaction failed - result is undefined');
     }
 
     res.json({

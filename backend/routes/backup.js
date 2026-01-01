@@ -55,15 +55,23 @@ router.post('/', verifyToken, requireSuperAdmin, (req, res) => {
 
 // List backups - allows listing if database is empty (no auth needed), otherwise requires super admin
 router.get('/', async (req, res) => {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backup.js:56',message:'List backups endpoint entry',data:{backupDir:backupDir,dirExists:existsSync(backupDir)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'P'})}).catch(()=>{});
+  // #endregion
+  console.log('[DEBUG] List backups endpoint called');
+  console.log('[DEBUG] Backup directory:', backupDir);
+  console.log('[DEBUG] Backup directory exists:', existsSync(backupDir));
   try {
     // Check if database is empty (no users)
     let databaseEmpty = false;
     try {
       const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
       databaseEmpty = userCount.count === 0;
+      console.log('[DEBUG] User count:', userCount.count, 'Database empty:', databaseEmpty);
     } catch (e) {
       // Database might not exist or table doesn't exist
       databaseEmpty = true;
+      console.log('[DEBUG] Database check error (assuming empty):', e.message);
     }
     
     // If database has users, require authentication
@@ -87,7 +95,21 @@ router.get('/', async (req, res) => {
       console.log('⚠️  Database is empty - allowing backup list without authentication');
     }
     
-    const files = readdirSync(backupDir)
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backup.js:89',message:'Reading backup directory',data:{backupDir:backupDir,exists:existsSync(backupDir)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'Q'})}).catch(()=>{});
+    // #endregion
+    
+    // Ensure backup directory exists
+    if (!existsSync(backupDir)) {
+      console.log('[DEBUG] Backup directory does not exist, creating it');
+      mkdirSync(backupDir, { recursive: true });
+    }
+    
+    console.log('[DEBUG] Reading files from:', backupDir);
+    const allFiles = readdirSync(backupDir);
+    console.log('[DEBUG] All files in backup directory:', allFiles);
+    
+    const files = allFiles
       .filter(file => file.endsWith('.db'))
       .map(file => {
         const filePath = join(backupDir, file);
@@ -100,10 +122,20 @@ router.get('/', async (req, res) => {
       })
       .sort((a, b) => new Date(b.date) - new Date(a.date));
 
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backup.js:102',message:'Backup files found',data:{totalFiles:allFiles.length,dbFiles:files.length,filenames:files.map(f=>f.filename)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'R'})}).catch(()=>{});
+    // #endregion
+    console.log('[DEBUG] Found backup files:', files.length);
+    console.log('[DEBUG] Backup files:', files.map(f => f.filename));
+
     res.json(files);
   } catch (error) {
-    console.error('Error listing backups:', error);
-    res.status(500).json({ error: 'Failed to list backups' });
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backup.js:105',message:'Error listing backups',data:{errorMessage:error.message,errorStack:error.stack},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'S'})}).catch(()=>{});
+    // #endregion
+    console.error('[DEBUG] Error listing backups:', error);
+    console.error('[DEBUG] Error stack:', error.stack);
+    res.status(500).json({ error: 'Failed to list backups', details: process.env.NODE_ENV !== 'production' ? error.message : undefined });
   }
 });
 

@@ -2,10 +2,15 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { User, UserRole } from '../types';
 
+// Get API base URL (same logic as api.ts)
+const rawApiUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
+const API_BASE_URL = rawApiUrl.endsWith('/') ? rawApiUrl.slice(0, -1) : rawApiUrl;
+
 export default function UserManagement() {
   const { user: currentUser, hasPermission } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [formData, setFormData] = useState({
@@ -24,11 +29,23 @@ export default function UserManagement() {
 
   const loadUsers = async () => {
     try {
+      setLoading(true);
+      setError('');
       const token = localStorage.getItem('auth_token');
-      const response = await fetch('/api/auth/users', {
+      const url = `${API_BASE_URL}/auth/users`;
+      console.log('[UserManagement] Loading users from:', url);
+      console.log('[UserManagement] Current user:', currentUser ? { id: currentUser.id, role: currentUser.role, businessId: currentUser.businessId } : null);
+      
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
+      });
+      
+      console.log('[UserManagement] Response:', {
+        status: response.status,
+        ok: response.ok,
+        contentType: response.headers.get('content-type')
       });
 
       if (response.ok) {
@@ -105,7 +122,7 @@ export default function UserManagement() {
 
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(`/api/auth/users/${userId}`, {
+      const response = await fetch(`${API_BASE_URL}/auth/users/${userId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,

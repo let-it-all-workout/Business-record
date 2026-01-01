@@ -170,7 +170,8 @@ router.post('/restore', async (req, res) => {
     } else {
       console.log('⚠️  Database is empty - allowing restore without authentication');
     }
-  try {
+    
+    // Now proceed with restore
     const { file } = req.query;
     if (!file) {
       return res.status(400).json({ error: 'Filename required' });

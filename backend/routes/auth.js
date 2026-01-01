@@ -256,25 +256,42 @@ router.post('/register', registerLimiter, async (req, res) => {
     // Hash password with bcrypt
     const passwordHash = await hashPassword(password);
 
-    // Use transaction to create business and user atomically
+    // Use transaction to create user and business atomically
+    // IMPORTANT: Create user FIRST (without business_id), then business (with owner_id), then update user
+    // This is because businesses table has NOT NULL constraint on owner_id with foreign key to users
     const transaction = db.transaction(() => {
-      // Create business
+      // Step 1: Create user first (without business_id, will be set later)
+      const userId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Check if business_id column exists in users table
+      const tableInfo = db.prepare("PRAGMA table_info(users)").all();
+      const hasBusinessId = tableInfo.some(col => col.name === 'business_id');
+      
+      if (hasBusinessId) {
+        // Insert user without business_id first (will be set after business is created)
+        db.prepare(`
+          INSERT INTO users (id, username, email, password_hash, full_name, role, is_active, business_id)
+          VALUES (?, ?, ?, ?, ?, 'admin', 1, NULL)
+        `).run(userId, username, email, passwordHash, fullName);
+      } else {
+        // Old schema without business_id column
+        db.prepare(`
+          INSERT INTO users (id, username, email, password_hash, full_name, role, is_active)
+          VALUES (?, ?, ?, ?, ?, 'admin', 1)
+        `).run(userId, username, email, passwordHash, fullName);
+      }
+
+      // Step 2: Create business with owner_id pointing to the user we just created
       const businessId = `business-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       db.prepare(`
         INSERT INTO businesses (id, name, owner_id, created_at, updated_at)
         VALUES (?, ?, ?, datetime('now'), datetime('now'))
-      `).run(businessId, businessName, null); // owner_id will be set after user is created
+      `).run(businessId, businessName, userId);
 
-      // Create user as business owner (admin role within that business)
-      const userId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      
-      db.prepare(`
-        INSERT INTO users (id, username, email, password_hash, full_name, role, is_active, business_id)
-        VALUES (?, ?, ?, ?, ?, 'admin', 1, ?)
-      `).run(userId, username, email, passwordHash, fullName, businessId);
-
-      // Update business owner_id
-      db.prepare('UPDATE businesses SET owner_id = ? WHERE id = ?').run(userId, businessId);
+      // Step 3: Update user's business_id to link them to the business
+      if (hasBusinessId) {
+        db.prepare('UPDATE users SET business_id = ? WHERE id = ?').run(businessId, userId);
+      }
 
       return { userId, businessId, username, email, fullName };
     });

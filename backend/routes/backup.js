@@ -4,6 +4,7 @@ import { dirname, join, basename } from 'path';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'fs';
 import Database from 'better-sqlite3';
 import { verifyToken } from './auth.js';
+import db from '../database/db.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);

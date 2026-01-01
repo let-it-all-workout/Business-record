@@ -52,9 +52,40 @@ router.post('/', verifyToken, requireSuperAdmin, (req, res) => {
   }
 });
 
-// List backups (Super Admin Only)
-router.get('/', verifyToken, requireSuperAdmin, (req, res) => {
+// List backups - allows listing if database is empty (no auth needed), otherwise requires super admin
+router.get('/', async (req, res) => {
   try {
+    // Check if database is empty (no users)
+    let databaseEmpty = false;
+    try {
+      const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
+      databaseEmpty = userCount.count === 0;
+    } catch (e) {
+      // Database might not exist or table doesn't exist
+      databaseEmpty = true;
+    }
+    
+    // If database has users, require authentication
+    if (!databaseEmpty) {
+      // Try to verify token
+      try {
+        const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token;
+        if (!token) {
+          return res.status(401).json({ error: 'Authentication required when database has users' });
+        }
+        
+        // Verify token (simplified check)
+        const session = db.prepare('SELECT s.*, u.role FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = ?').get(token);
+        if (!session || session.role !== 'super_admin') {
+          return res.status(403).json({ error: 'Super admin access required' });
+        }
+      } catch (authError) {
+        return res.status(401).json({ error: 'Authentication failed' });
+      }
+    } else {
+      console.log('⚠️  Database is empty - allowing backup list without authentication');
+    }
+    
     const files = readdirSync(backupDir)
       .filter(file => file.endsWith('.db'))
       .map(file => {

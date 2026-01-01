@@ -351,6 +351,56 @@ router.post('/register', registerLimiter, async (req, res) => {
   }
 });
 
+// Create super admin endpoint (for initial setup - only works if no users exist)
+router.post('/create-super-admin', async (req, res) => {
+  try {
+    // Check if any users exist
+    const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
+    
+    if (userCount.count > 0) {
+      return res.status(403).json({ error: 'Users already exist. Cannot create super admin.' });
+    }
+    
+    const { username, password, email } = req.body;
+    
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password required' });
+    }
+    
+    const defaultEmail = email || process.env.DEFAULT_ADMIN_EMAIL || 'admin@example.com';
+    const adminId = `user-${Date.now()}`;
+    const adminPasswordHash = await hashPassword(password);
+    
+    // Check if business_id column exists
+    const tableInfo = db.prepare("PRAGMA table_info(users)").all();
+    const hasBusinessId = tableInfo.some(col => col.name === 'business_id');
+    
+    if (hasBusinessId) {
+      db.prepare(`
+        INSERT INTO users (id, username, email, password_hash, full_name, role, is_active, business_id)
+        VALUES (?, ?, ?, ?, 'Super Administrator', 'super_admin', 1, NULL)
+      `).run(adminId, username, defaultEmail, adminPasswordHash);
+    } else {
+      db.prepare(`
+        INSERT INTO users (id, username, email, password_hash, full_name, role, is_active)
+        VALUES (?, ?, ?, ?, 'Super Administrator', 'super_admin', 1)
+      `).run(adminId, username, defaultEmail, adminPasswordHash);
+    }
+    
+    console.log(`✅ Super admin created: ${username}`);
+    
+    res.json({
+      success: true,
+      message: 'Super admin created successfully',
+      username,
+      email: defaultEmail
+    });
+  } catch (error) {
+    console.error('Error creating super admin:', error);
+    res.status(500).json({ error: 'Failed to create super admin' });
+  }
+});
+
 // Login
 router.post('/login', loginLimiter, async (req, res) => {
   // #region agent log

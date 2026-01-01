@@ -10,8 +10,9 @@ import authRouter from './routes/auth.js';
 const app = express();
 const PORT = process.env.PORT || 3002;
 
-// Trust proxy for Railway (needed for rate limiting to work correctly)
-app.set('trust proxy', true);
+// Trust proxy for Railway - use specific number instead of true for security
+// This tells Express to trust the first proxy (Railway's load balancer)
+app.set('trust proxy', 1);
 
 // Middleware
 // CORS configuration - restrict to allowed origins

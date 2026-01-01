@@ -1158,6 +1158,23 @@ router.get('/pin-status', verifyToken, (req, res) => {
   }
 });
 
+// Diagnostic endpoint: Check current user's role (no auth required for debugging)
+router.get('/my-role', verifyToken, (req, res) => {
+  try {
+    res.json({
+      userId: req.user.id,
+      username: req.user.username,
+      role: req.user.role,
+      isSuperAdmin: req.user.role === 'super_admin',
+      businessId: req.user.businessId,
+      isActive: req.user.isActive
+    });
+  } catch (error) {
+    console.error('Error in /my-role endpoint:', error);
+    res.status(500).json({ error: 'Failed to get user role' });
+  }
+});
+
 // Get all businesses (super_admin only)
 router.get('/businesses', verifyToken, (req, res) => {
   try {

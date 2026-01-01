@@ -51,9 +51,10 @@ function App() {
       loading,
       user: user ? { id: user.id, username: user.username, role: user.role } : null,
       isSuperAdmin,
-      isBusinessAdmin
+      isBusinessAdmin,
+      hasPermissionUsersRead: hasPermission('users:read')
     });
-  }, [isAuthenticated, loading, user, isSuperAdmin, isBusinessAdmin]);
+  }, [isAuthenticated, loading, user, isSuperAdmin, isBusinessAdmin, hasPermission]);
   // #endregion
   const [showRegister, setShowRegister] = useState(false);
   const [selectedBusinessId, setSelectedBusinessId] = useState<string | null>(

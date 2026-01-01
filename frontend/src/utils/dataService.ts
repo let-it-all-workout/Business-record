@@ -1,19 +1,23 @@
 import { Product, Sale, GoodsInventory } from '../types';
 import { productsAPI, salesAPI, inventoryAPI, settingsAPI } from './api';
 
+// Get API base URL (same logic as api.ts)
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
+
 // Helper function to check API availability and throw meaningful errors
 const ensureAPI = async () => {
   try {
-    const response = await fetch('/api/health', {
+    const response = await fetch(`${API_BASE_URL}/health`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     });
     if (!response.ok) {
-      throw new Error('API server is not responding. Please ensure the server is running on port 3002.');
+      throw new Error('API server is not responding. Please check your backend connection.');
     }
   } catch (error) {
     if (error instanceof TypeError && (error.message.includes('fetch') || error.message.includes('Failed to fetch'))) {
-      throw new Error('Cannot connect to API server. Please ensure the server is running on port 3002.');
+      const apiUrl = API_BASE_URL || 'backend server';
+      throw new Error(`Cannot connect to API server at ${apiUrl}. Please check your VITE_API_URL environment variable and ensure the backend is running.`);
     }
     throw error;
   }

@@ -411,7 +411,15 @@ router.post('/login', loginLimiter, async (req, res) => {
       // List all usernames for debugging
       const allUsers = db.prepare('SELECT username, role, is_active FROM users').all();
       console.log(`[DEBUG] All users in database:`, allUsers);
-      return res.status(401).json({ error: 'Invalid credentials' });
+      console.log(`[DEBUG] Searched username was: "${username}"`);
+      console.log(`[DEBUG] Available usernames:`, allUsers.map(u => u.username).join(', ') || 'NONE');
+      return res.status(401).json({ 
+        error: 'Invalid credentials',
+        debug: process.env.NODE_ENV !== 'production' ? { 
+          searchedUsername: username,
+          availableUsernames: allUsers.map(u => u.username)
+        } : undefined
+      });
     }
 
     // Verify password (supports both bcrypt and legacy SHA256)

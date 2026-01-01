@@ -91,7 +91,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (credentials: LoginCredentials) => {
     // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:92',message:'Login function entry',data:{apiBaseUrl:API_BASE_URL,viteApiUrl:import.meta.env.VITE_API_URL,isDev:import.meta.env.DEV,mode:import.meta.env.MODE},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    const debugData = {apiBaseUrl:API_BASE_URL,viteApiUrl:import.meta.env.VITE_API_URL,isDev:import.meta.env.DEV,mode:import.meta.env.MODE};
+    console.log('🔍 [DEBUG] Login entry:', debugData);
+    fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:92',message:'Login function entry',data:debugData,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
     // #endregion
     try {
       const loginUrl = `${API_BASE_URL}/auth/login`;
@@ -147,8 +149,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : '';
+      const debugErrorData = {errorMessage:errorMessage,containsPort3002:errorMessage.includes('3002'),containsPort3002Lower:errorMessage.toLowerCase().includes('3002')};
+      console.error('🔍 [DEBUG] Login error details:', debugErrorData);
       // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:132',message:'Login catch block - error thrown',data:{errorMessage:errorMessage,errorStack:errorStack,containsPort3002:errorMessage.includes('3002'),containsPort3002Lower:errorMessage.toLowerCase().includes('3002')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:132',message:'Login catch block - error thrown',data:{...debugErrorData,errorStack:errorStack},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
       // #endregion
       console.error('Login error:', error);
       throw error;

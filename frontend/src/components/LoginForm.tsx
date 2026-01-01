@@ -23,8 +23,10 @@ export default function LoginForm({ onSwitchToRegister }: { onSwitchToRegister?:
       // #endregion
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Login failed';
+      const debugErrorData = {errorMessage:errorMessage,containsPort3002:errorMessage.includes('3002'),errorType:err?.constructor?.name};
+      console.error('🔍 [DEBUG] LoginForm error:', debugErrorData);
       // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LoginForm.tsx:23',message:'LoginForm catch - setting error',data:{errorMessage:errorMessage,containsPort3002:errorMessage.includes('3002'),errorType:err?.constructor?.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LoginForm.tsx:23',message:'LoginForm catch - setting error',data:debugErrorData,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
       // #endregion
       setError(errorMessage);
     } finally {

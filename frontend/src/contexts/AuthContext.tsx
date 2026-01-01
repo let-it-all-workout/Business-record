@@ -4,6 +4,16 @@ import { User, AuthSession, LoginCredentials, UserRole, Permission, ROLE_PERMISS
 // Get API base URL (same logic as api.ts)
 const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
 
+// Debug logging (remove in production if needed)
+if (typeof window !== 'undefined') {
+  console.log('🔍 API Configuration:', {
+    VITE_API_URL: import.meta.env.VITE_API_URL,
+    API_BASE_URL: API_BASE_URL,
+    isDev: import.meta.env.DEV,
+    mode: import.meta.env.MODE
+  });
+}
+
 interface AuthContextType {
   user: User | null;
   session: AuthSession | null;

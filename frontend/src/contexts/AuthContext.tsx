@@ -50,11 +50,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const verifySession = async (token: string) => {
     try {
+      // #region agent log
+      console.log('[AuthContext] Verifying session:', {
+        apiBaseUrl: API_BASE_URL,
+        meUrl: `${API_BASE_URL}/auth/me`,
+        tokenLength: token?.length,
+        tokenPreview: token ? `${token.substring(0, 10)}...` : 'none'
+      });
+      // #endregion
       const response = await fetch(`${API_BASE_URL}/auth/me`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
       });
+
+      // #region agent log
+      console.log('[AuthContext] /auth/me response:', {
+        status: response.status,
+        ok: response.ok,
+        statusText: response.statusText
+      });
+      // #endregion
 
       if (response.ok) {
         const contentType = response.headers.get('content-type');
@@ -100,6 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const loginUrl = `${API_BASE_URL}/auth/login`;
       // #region agent log
+      
       const debugInfo = {
         loginUrl: loginUrl,
         apiBaseUrl: API_BASE_URL,

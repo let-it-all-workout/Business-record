@@ -640,7 +640,20 @@ export function verifyToken(req, res, next) {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token;
 
+    // #region agent log
+    console.log('[verifyToken] Token verification attempt:', {
+      hasToken: !!token,
+      tokenLength: token?.length,
+      tokenPreview: token ? `${token.substring(0, 10)}...` : 'none',
+      path: req.path,
+      method: req.method
+    });
+    // #endregion
+
     if (!token) {
+      // #region agent log
+      console.log('[verifyToken] No token provided');
+      // #endregion
       return res.status(401).json({ error: 'No token provided' });
     }
 
@@ -651,7 +664,26 @@ export function verifyToken(req, res, next) {
       WHERE s.token = ?
     `).get(token);
 
+    // #region agent log
+    console.log('[verifyToken] Session lookup result:', {
+      sessionFound: !!session,
+      userId: session?.user_id,
+      username: session?.username,
+      role: session?.role,
+      isActive: session?.is_active,
+      expiresAt: session?.expires_at,
+      isExpired: session ? isTokenExpired(session.expires_at) : null
+    });
+    // #endregion
+
     if (!session || isTokenExpired(session.expires_at) || !session.is_active) {
+      // #region agent log
+      console.log('[verifyToken] Token verification failed:', {
+        noSession: !session,
+        expired: session ? isTokenExpired(session.expires_at) : false,
+        inactive: session ? !session.is_active : false
+      });
+      // #endregion
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
 

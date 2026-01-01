@@ -52,17 +52,24 @@ export default function UserManagement() {
         const contentType = response.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
           const data = await response.json();
+          console.log('[UserManagement] Users loaded:', data.length, 'users');
+          console.log('[UserManagement] Users data:', data);
           setUsers(data);
         } else {
-          console.error('Invalid response format from server');
+          const errorText = await response.text().catch(() => '');
+          console.error('[UserManagement] Invalid response format:', contentType, errorText);
+          setError(`Invalid response from server: ${response.status}`);
           setUsers([]);
         }
       } else {
-        console.error('Failed to load users:', response.status);
+        const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+        console.error('[UserManagement] Failed to load users:', response.status, errorData);
+        setError(errorData.error || `Failed to load users: ${response.status}`);
         setUsers([]);
       }
     } catch (error) {
-      console.error('Error loading users:', error);
+      console.error('[UserManagement] Error loading users:', error);
+      setError(error instanceof Error ? error.message : 'Failed to load users');
       setUsers([]);
     } finally {
       setLoading(false);

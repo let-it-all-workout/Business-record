@@ -129,10 +129,30 @@ function initializeAuthSchema() {
               }
               console.log('   ⚠️  IMPORTANT: Change the default password immediately after first login!');
             } catch (insertError) {
+              // #region agent log
+              const errorMsg = insertError.message || String(insertError);
+              const errorStack = insertError.stack || '';
+              fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:131',message:'Insert error caught',data:{errorMessage:errorMsg,errorStack:errorStack.substring(0,200),hasMessage:!!insertError.message,includesCheck:insertError.message?.includes('CHECK constraint')||false,includesCheckFailed:insertError.message?.includes('CHECK constraint failed')||false},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+              // #endregion
+              
               // If insert fails due to CHECK constraint, the table needs to be recreated
-              if (insertError.message && insertError.message.includes('CHECK constraint')) {
+              // Check for both "CHECK constraint" and "CHECK constraint failed" patterns
+              // Also check the error string representation in case message is undefined
+              const errorStr = insertError.message || String(insertError) || '';
+              const isCheckConstraintError = errorStr.includes('CHECK constraint') || 
+                                            errorStr.includes('CHECK constraint failed') ||
+                                            errorStr.includes('role IN');
+              
+              // #region agent log
+              fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:140',message:'CHECK constraint detection',data:{isCheckConstraintError,errorMessage:errorMsg},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+              // #endregion
+              
+              if (isCheckConstraintError) {
                 console.log('   ⚠️  CHECK constraint error: Users table has old constraint without super_admin');
                 console.log('   ⚠️  Attempting to fix by recreating users table...');
+                // #region agent log
+                fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:145',message:'Starting table recreation',data:{userCount:userCount.count},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+                // #endregion
                 try {
                   // Since database is empty (userCount.count === 0), we can safely recreate the table
                   // Temporarily disable foreign key constraints to allow table recreation
@@ -169,6 +189,10 @@ function initializeAuthSchema() {
                   
                   console.log('   ✅ Users table recreated with correct CHECK constraint');
                   
+                  // #region agent log
+                  fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:168',message:'Table recreated, attempting user insert',data:{adminId,defaultUsername},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+                  // #endregion
+                  
                   // Now try to create the user again
                   db.prepare(`
                     INSERT INTO users (id, username, email, password_hash, full_name, role, is_active, business_id)
@@ -176,14 +200,24 @@ function initializeAuthSchema() {
                   `).run(adminId, defaultUsername, defaultEmail, adminPasswordHash);
                   console.log('✅ Default super_admin user created after table fix');
                   console.log('   ⚠️  IMPORTANT: Change the default password immediately after first login!');
+                  // #region agent log
+                  fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:177',message:'User created successfully after table fix',data:{adminId,defaultUsername},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+                  // #endregion
                 } catch (recreateError) {
                   // Re-enable foreign keys even if recreation failed
                   db.exec('PRAGMA foreign_keys = ON').catch(() => {});
-                  console.log('   ❌ Failed to recreate users table:', recreateError.message?.substring(0, 100));
+                  const recreateErrorMsg = recreateError.message || String(recreateError);
+                  // #region agent log
+                  fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:181',message:'Table recreation failed',data:{errorMessage:recreateErrorMsg,errorStack:recreateError.stack?.substring(0,200)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+                  // #endregion
+                  console.log('   ❌ Failed to recreate users table:', recreateErrorMsg.substring(0, 100));
                   console.log('   Note: You may need to use /api/auth/create-super-admin endpoint instead');
                 }
               } else {
                 // Other insert errors
+                // #region agent log
+                fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'auth.js:188',message:'Non-CHECK constraint error',data:{errorMessage:errorMsg},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
+                // #endregion
                 console.log('   Note: Could not create default user:', insertError.message?.substring(0, 100));
               }
             }

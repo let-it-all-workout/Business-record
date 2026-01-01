@@ -366,43 +366,48 @@ router.post('/register', registerLimiter, async (req, res) => {
     const passwordHash = await hashPassword(password);
 
     // Use transaction to create user and business atomically
-    // IMPORTANT: Create user FIRST (without business_id), then business (with owner_id), then update user
-    // This is because businesses table has NOT NULL constraint on owner_id with foreign key to users
+    // IMPORTANT: We need to disable foreign keys temporarily because:
+    // 1. businesses.owner_id has NOT NULL constraint and references users.id
+    // 2. users.business_id references businesses.id
+    // Solution: Disable foreign keys, create both, then re-enable
     const transaction = db.transaction(() => {
-      // Step 1: Create user first (without business_id, will be set later)
-      const userId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      // Temporarily disable foreign key constraints
+      db.pragma('foreign_keys = OFF');
       
-      // Check if business_id column exists in users table
-      const tableInfo = db.prepare("PRAGMA table_info(users)").all();
-      const hasBusinessId = tableInfo.some(col => col.name === 'business_id');
-      
-      // Step 2: Create business first (with NULL owner_id temporarily, will update after user creation)
-      const businessId = `business-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      
-      // Insert business with NULL owner_id first (SQLite allows this if foreign keys are deferred)
-      db.prepare(`
-        INSERT INTO businesses (id, name, owner_id, created_at, updated_at)
-        VALUES (?, ?, NULL, datetime('now'), datetime('now'))
-      `).run(businessId, businessName);
-      
-      // Step 3: Create user with business_id
-      if (hasBusinessId) {
+      try {
+        // Step 1: Create user first (without business_id)
+        const userId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Check if business_id column exists in users table
+        const tableInfo = db.prepare("PRAGMA table_info(users)").all();
+        const hasBusinessId = tableInfo.some(col => col.name === 'business_id');
+        
+        // Step 2: Create business with owner_id pointing to user (foreign keys disabled)
+        const businessId = `business-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         db.prepare(`
-          INSERT INTO users (id, username, email, password_hash, full_name, role, is_active, business_id)
-          VALUES (?, ?, ?, ?, ?, 'admin', 1, ?)
-        `).run(userId, username, email, passwordHash, fullName, businessId);
-      } else {
-        // Old schema without business_id column
-        db.prepare(`
-          INSERT INTO users (id, username, email, password_hash, full_name, role, is_active)
-          VALUES (?, ?, ?, ?, ?, 'admin', 1)
-        `).run(userId, username, email, passwordHash, fullName);
+          INSERT INTO businesses (id, name, owner_id, created_at, updated_at)
+          VALUES (?, ?, ?, datetime('now'), datetime('now'))
+        `).run(businessId, businessName, userId);
+        
+        // Step 3: Create user with business_id
+        if (hasBusinessId) {
+          db.prepare(`
+            INSERT INTO users (id, username, email, password_hash, full_name, role, is_active, business_id)
+            VALUES (?, ?, ?, ?, ?, 'admin', 1, ?)
+          `).run(userId, username, email, passwordHash, fullName, businessId);
+        } else {
+          // Old schema without business_id column
+          db.prepare(`
+            INSERT INTO users (id, username, email, password_hash, full_name, role, is_active)
+            VALUES (?, ?, ?, ?, ?, 'admin', 1)
+          `).run(userId, username, email, passwordHash, fullName);
+        }
+        
+        return { userId, businessId, username, email, fullName };
+      } finally {
+        // Re-enable foreign key constraints
+        db.pragma('foreign_keys = ON');
       }
-
-      // Step 4: Update business owner_id to point to the user
-      db.prepare('UPDATE businesses SET owner_id = ? WHERE id = ?').run(userId, businessId);
-
-      return { userId, businessId, username, email, fullName };
     });
 
     const result = transaction();

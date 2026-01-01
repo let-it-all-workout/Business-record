@@ -173,7 +173,7 @@ export default function SettingsPanel({
         return;
       }
 
-      const response = await fetch('/api/auth/set-pin', {
+      const response = await fetch(`${API_BASE_URL}/auth/set-pin`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -382,6 +382,34 @@ router.delete('/', verifyToken, requireSuperAdmin, (req, res) => {
   }
 });
 
+// Diagnostic endpoint for backup directory (no auth when DB empty)
+router.get('/diagnostic', async (req, res) => {
+  try {
+    const info = {
+      backupDir,
+      backupDirExists: existsSync(backupDir),
+      dbPath,
+      dbExists: existsSync(dbPath),
+    };
+    
+    if (existsSync(backupDir)) {
+      try {
+        const allFiles = readdirSync(backupDir);
+        info.filesInBackupDir = allFiles;
+        info.dbFiles = allFiles.filter(f => f.endsWith('.db'));
+        info.totalFiles = allFiles.length;
+        info.totalDbFiles = info.dbFiles.length;
+      } catch (e) {
+        info.readError = e.message;
+      }
+    }
+    
+    res.json(info);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;
 
 

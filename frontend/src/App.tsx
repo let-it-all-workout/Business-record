@@ -940,7 +940,10 @@ function App() {
 
               {/* User Actions */}
               <button
-                onClick={() => setShowSettings(true)}
+                onClick={() => {
+                  console.log('[App] Settings button clicked');
+                  setShowSettings(true);
+                }}
                 className="btn-icon"
                 title="Settings"
               >
@@ -951,7 +954,10 @@ function App() {
               </button>
               {hasPermission('users:read') && (
                 <button
-                  onClick={() => setShowUserManagement(!showUserManagement)}
+                  onClick={() => {
+                    console.log('[App] User Management button clicked, current state:', showUserManagement);
+                    setShowUserManagement(!showUserManagement);
+                  }}
                   className="btn-icon"
                   title="User Management"
                 >

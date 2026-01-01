@@ -203,7 +203,8 @@ function App() {
       } catch (error) {
         console.error('Error loading data:', error);
         const errorMessage = error instanceof Error ? error.message : 'Failed to load data';
-        setLoadError(`Error: ${errorMessage}\n\nPlease ensure the server is running on port 3002.\n\nTo start the server, run: npm run server`);
+        const apiUrl = import.meta.env.VITE_API_URL || 'backend server';
+        setLoadError(`Error: ${errorMessage}\n\nPlease check your VITE_API_URL environment variable (currently: ${apiUrl}) and ensure the backend is running.`);
       } finally {
         setIsLoading(false);
       }

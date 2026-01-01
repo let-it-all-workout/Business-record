@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
+// Get API base URL (same logic as api.ts)
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
+
 export default function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () => void }) {
   const [formData, setFormData] = useState({
     username: '',
@@ -20,7 +23,7 @@ export default function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () 
 
     try {
       // Register new user and business
-      const response = await fetch('/api/auth/register', {
+      const response = await fetch(`${API_BASE_URL}/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -30,7 +33,8 @@ export default function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () 
 
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        throw new Error('Server is not responding correctly. Please ensure the server is running on port 3002.');
+        const apiUrl = API_BASE_URL || 'backend server';
+        throw new Error(`Cannot connect to API server at ${apiUrl}. Please check your VITE_API_URL environment variable and ensure the backend is running.`);
       }
 
       if (!response.ok) {

@@ -1,6 +1,9 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, AuthSession, LoginCredentials, UserRole, Permission, ROLE_PERMISSIONS, Business } from '../types';
 
+// Get API base URL (same logic as api.ts)
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
+
 interface AuthContextType {
   user: User | null;
   session: AuthSession | null;
@@ -35,7 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const verifySession = async (token: string) => {
     try {
-      const response = await fetch('/api/auth/me', {
+      const response = await fetch(`${API_BASE_URL}/auth/me`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -78,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (credentials: LoginCredentials) => {
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -88,7 +91,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        throw new Error('Server is not responding correctly. Please ensure the server is running on port 3002.');
+        const apiUrl = API_BASE_URL || 'backend server';
+        throw new Error(`Cannot connect to API server at ${apiUrl}. Please check your VITE_API_URL environment variable and ensure the backend is running.`);
       }
 
       if (!response.ok) {
@@ -118,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const token = localStorage.getItem('auth_token');
       if (token) {
-        await fetch('/api/auth/logout', {
+        await fetch(`${API_BASE_URL}/auth/logout`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,

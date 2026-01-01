@@ -669,7 +669,7 @@ export function verifyToken(req, res, next) {
     }
 
     // Try to find session with exact token match
-    const session = db.prepare(`
+    let session = db.prepare(`
       SELECT s.*, u.username, u.email, u.full_name, u.role, u.is_active, u.business_id
       FROM sessions s
       JOIN users u ON s.user_id = u.id
@@ -680,6 +680,7 @@ export function verifyToken(req, res, next) {
     // Also check if there are any sessions at all, and what tokens exist
     const allSessions = db.prepare('SELECT token, expires_at, user_id FROM sessions LIMIT 5').all();
     const tokenMatches = allSessions.filter(s => s.token === token);
+    const tokenMatchesTrimmed = allSessions.filter(s => s.token.trim() === token.trim());
     console.log('[verifyToken] Session lookup result:', {
       sessionFound: !!session,
       userId: session?.user_id,
@@ -692,9 +693,26 @@ export function verifyToken(req, res, next) {
       tokenPreview: token ? `${token.substring(0, 20)}...` : 'none',
       totalSessionsInDb: allSessions.length,
       tokenMatchesInDb: tokenMatches.length,
-      dbTokenPreviews: allSessions.map(s => ({ preview: s.token.substring(0, 20), length: s.token.length }))
+      tokenMatchesTrimmed: tokenMatchesTrimmed.length,
+      dbTokenPreviews: allSessions.map(s => ({ preview: s.token.substring(0, 20), length: s.token.length, matches: s.token === token, matchesTrimmed: s.token.trim() === token.trim() }))
     });
     // #endregion
+    
+    // If no exact match, try trimmed token (in case of whitespace issues)
+    if (!session && token) {
+      const trimmedToken = token.trim();
+      if (trimmedToken !== token) {
+        // #region agent log
+        console.log('[verifyToken] No exact match, trying trimmed token');
+        // #endregion
+        session = db.prepare(`
+          SELECT s.*, u.username, u.email, u.full_name, u.role, u.is_active, u.business_id
+          FROM sessions s
+          JOIN users u ON s.user_id = u.id
+          WHERE s.token = ?
+        `).get(trimmedToken);
+      }
+    }
 
     // Check each condition separately for better debugging
     const expired = session ? isTokenExpired(session.expires_at) : false;

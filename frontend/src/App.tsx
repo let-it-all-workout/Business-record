@@ -43,6 +43,18 @@ type ViewMode = 'products' | 'sales';
 function App() {
   const { isAuthenticated, loading, user, logout, hasPermission, business, isSuperAdmin, canSeeFinancialData } = useAuth();
   const isBusinessAdmin = user?.role === 'admin' || isSuperAdmin;
+  
+  // #region agent log
+  useEffect(() => {
+    console.log('[App] User state:', {
+      isAuthenticated,
+      loading,
+      user: user ? { id: user.id, username: user.username, role: user.role } : null,
+      isSuperAdmin,
+      isBusinessAdmin
+    });
+  }, [isAuthenticated, loading, user, isSuperAdmin, isBusinessAdmin]);
+  // #endregion
   const [showRegister, setShowRegister] = useState(false);
   const [selectedBusinessId, setSelectedBusinessId] = useState<string | null>(
     localStorage.getItem('selected_business_id')

@@ -180,10 +180,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const data = await response.json();
       // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:125',message:'Login successful',data:{hasToken:!!data.token,hasUser:!!data.user},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+      console.log('[AuthContext] Login response data:', {
+        hasToken: !!data.token,
+        hasUser: !!data.user,
+        userRole: data.user?.role,
+        username: data.user?.username
+      });
+      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:125',message:'Login successful',data:{hasToken:!!data.token,hasUser:!!data.user,userRole:data.user?.role},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
       // #endregion
       localStorage.setItem('auth_token', data.token);
       
+      // Set user state from login response (don't wait for /auth/me)
       setUser(data.user);
       setBusiness(data.business || null);
       setSession({
@@ -192,6 +199,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role: data.user.role,
         token: data.token,
         expiresAt: data.expiresAt,
+      });
+      
+      // Try to verify session in background (non-blocking)
+      // This will update user state if /auth/me succeeds, but won't block if it fails
+      verifySession(data.token).catch(err => {
+        console.warn('[AuthContext] Background session verification failed (non-critical):', err);
+        // Don't clear user state - we already have it from login response
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);

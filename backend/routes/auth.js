@@ -733,6 +733,48 @@ router.post('/logout', verifyToken, (req, res) => {
   }
 });
 
+// Diagnostic endpoint - check session status (for debugging, no auth required)
+router.get('/session/debug', (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token;
+    if (!token) {
+      return res.json({
+        error: 'No token provided',
+        tokenExists: false
+      });
+    }
+    
+    const session = db.prepare(`
+      SELECT s.*, u.username, u.email, u.full_name, u.role, u.is_active, u.business_id
+      FROM sessions s
+      JOIN users u ON s.user_id = u.id
+      WHERE s.token = ?
+    `).get(token);
+    
+    const totalSessions = db.prepare('SELECT COUNT(*) as count FROM sessions').get().count;
+    
+    res.json({
+      tokenExists: !!token,
+      tokenLength: token?.length,
+      tokenPreview: token ? `${token.substring(0, 10)}...` : null,
+      sessionFound: !!session,
+      session: session ? {
+        id: session.id,
+        userId: session.user_id,
+        username: session.username,
+        role: session.role,
+        isActive: session.is_active,
+        expiresAt: session.expires_at,
+        isExpired: isTokenExpired(session.expires_at)
+      } : null,
+      totalSessions: totalSessions
+    });
+  } catch (error) {
+    console.error('Error in session debug endpoint:', error);
+    res.status(500).json({ error: 'Failed to get session debug info', details: error.message });
+  }
+});
+
 // Diagnostic endpoint - list all users with details (super admin only, for debugging)
 router.get('/users/debug', verifyToken, (req, res) => {
   try {

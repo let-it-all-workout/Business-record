@@ -638,7 +638,11 @@ router.post('/login', loginLimiter, async (req, res) => {
 // Verify token (middleware)
 export function verifyToken(req, res, next) {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token;
+    // Extract token from multiple possible locations
+    const authHeader = req.headers.authorization || req.headers.Authorization;
+    const tokenFromHeader = authHeader?.replace(/^Bearer\s+/i, '') || authHeader?.replace(/^bearer\s+/i, '');
+    const tokenFromQuery = req.query.token;
+    const token = tokenFromHeader || tokenFromQuery;
 
     // #region agent log
     console.log('[verifyToken] Token verification attempt:', {
@@ -646,13 +650,20 @@ export function verifyToken(req, res, next) {
       tokenLength: token?.length,
       tokenPreview: token ? `${token.substring(0, 10)}...` : 'none',
       path: req.path,
-      method: req.method
+      method: req.method,
+      authHeader: authHeader ? `${authHeader.substring(0, 20)}...` : 'none',
+      tokenFromHeader: !!tokenFromHeader,
+      tokenFromQuery: !!tokenFromQuery
     });
     // #endregion
 
     if (!token) {
       // #region agent log
-      console.log('[verifyToken] No token provided');
+      console.log('[verifyToken] No token provided - checking headers:', {
+        authorization: req.headers.authorization,
+        Authorization: req.headers.Authorization,
+        queryToken: req.query.token
+      });
       // #endregion
       return res.status(401).json({ error: 'No token provided' });
     }

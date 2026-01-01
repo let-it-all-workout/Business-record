@@ -199,7 +199,10 @@ export default function SettingsPanel({
         return;
       }
 
-      const response = await fetch(`${API_BASE_URL}/auth/set-pin`, {
+      const url = `${API_BASE_URL}/auth/set-pin`;
+      console.log('[SettingsPanel] Setting PIN at:', url);
+      
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -207,26 +210,48 @@ export default function SettingsPanel({
         },
         body: JSON.stringify({ pin }),
       });
-
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        setPinError('Server error: Invalid response. Please ensure the server is running.');
-        setIsSettingPin(false);
-        return;
-      }
-
-      const data = await response.json();
+      
+      console.log('[SettingsPanel] Set PIN response:', {
+        status: response.status,
+        ok: response.ok,
+        contentType: response.headers.get('content-type')
+      });
 
       if (response.ok) {
-        setPinSuccess('PIN set successfully!');
-        setPin('');
-        setConfirmPin('');
-        setShowPinForm(false);
-        await checkPinStatus();
-        setTimeout(() => setPinSuccess(''), 3000);
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const data = await response.json().catch(() => ({}));
+          setPinSuccess('PIN set successfully!');
+          setPinError('');
+          setPin('');
+          setConfirmPin('');
+          setShowPinForm(false);
+          await checkPinStatus();
+          setTimeout(() => setPinSuccess(''), 3000);
+        } else {
+          // Non-JSON success response (unusual but handle gracefully)
+          const text = await response.text().catch(() => '');
+          console.warn('[SettingsPanel] Set PIN success but non-JSON response:', text.substring(0, 200));
+          setPinSuccess('PIN set successfully!');
+          setPinError('');
+          setPin('');
+          setConfirmPin('');
+          setShowPinForm(false);
+          await checkPinStatus();
+          setTimeout(() => setPinSuccess(''), 3000);
+        }
       } else {
-        setPinError(data.error || 'Failed to set PIN. Please try again.');
-        console.error('PIN setting error:', data);
+        // Error response - try to get JSON error, but handle non-JSON gracefully
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const error = await response.json().catch(() => ({ error: 'Failed to set PIN' }));
+          setPinError(error.error || 'Failed to set PIN. Please try again.');
+          console.error('[SettingsPanel] PIN setting error:', error);
+        } else {
+          const errorText = await response.text().catch(() => '');
+          console.error('[SettingsPanel] Set PIN error (non-JSON):', errorText.substring(0, 200));
+          setPinError(`Failed to set PIN: ${response.status} ${response.statusText}`);
+        }
       }
     } catch (error) {
       console.error('PIN setting exception:', error);

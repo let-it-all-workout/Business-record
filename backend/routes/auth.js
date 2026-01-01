@@ -72,40 +72,75 @@ function initializeAuthSchema() {
       // Note: This is async but we can't use await in module-level code
       // The hash will be computed synchronously on first server start
       try {
-        const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
-        if (userCount.count === 0) {
-          // Use bcrypt synchronously for initial setup (only happens once)
-          // Default password should be changed immediately after first login
-          const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'CHANGE_ME_IMMEDIATELY';
-          const adminId = `user-${Date.now()}`;
-          const adminPasswordHash = bcrypt.hashSync(defaultPassword, 12);
-          const defaultEmail = process.env.DEFAULT_ADMIN_EMAIL || 'admin@example.com';
-          const defaultUsername = process.env.DEFAULT_ADMIN_USERNAME || 'admin';
-          
-          // Check if business_id column exists before inserting
+        // First, ensure users table exists and has business_id column
+        let tableExists = false;
+        let hasBusinessId = false;
+        
+        try {
           const tableInfo = db.prepare("PRAGMA table_info(users)").all();
-          const hasBusinessId = tableInfo.some(col => col.name === 'business_id');
-          
-          if (hasBusinessId) {
-            db.prepare(`
-              INSERT INTO users (id, username, email, password_hash, full_name, role, is_active, business_id)
-              VALUES (?, ?, ?, ?, 'Super Administrator', 'super_admin', 1, NULL)
-            `).run(adminId, defaultUsername, defaultEmail, adminPasswordHash);
-            console.log('✅ Default super_admin user created');
-            console.log('   ⚠️  IMPORTANT: Change the default password immediately after first login!');
-          } else {
-            // Fallback: insert without business_id (for old schema compatibility)
-            db.prepare(`
-              INSERT INTO users (id, username, email, password_hash, full_name, role, is_active)
-              VALUES (?, ?, ?, ?, 'Super Administrator', 'super_admin', 1)
-            `).run(adminId, defaultUsername, defaultEmail, adminPasswordHash);
-            console.log('✅ Default super_admin user created (without business_id)');
-            console.log('   ⚠️  IMPORTANT: Change the default password immediately after first login!');
+          tableExists = tableInfo.length > 0;
+          if (tableExists) {
+            hasBusinessId = tableInfo.some(col => col.name === 'business_id');
+            // If table exists but doesn't have business_id, add it
+            if (!hasBusinessId) {
+              try {
+                db.exec("ALTER TABLE users ADD COLUMN business_id TEXT;");
+                hasBusinessId = true;
+                console.log('✅ Added business_id column to users table before user creation');
+              } catch (alterError) {
+                // Column might already exist or table locked, that's okay
+                console.log('   Note: Could not add business_id column:', alterError.message?.substring(0, 80));
+              }
+            }
           }
+        } catch (pragmaError) {
+          // Table doesn't exist yet, will be created by schema.sql
+          tableExists = false;
+        }
+        
+        // Only try to create user if table exists
+        if (tableExists) {
+          const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
+          if (userCount.count === 0) {
+            // Use bcrypt synchronously for initial setup (only happens once)
+            // Default password should be changed immediately after first login
+            const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'CHANGE_ME_IMMEDIATELY';
+            const adminId = `user-${Date.now()}`;
+            const adminPasswordHash = bcrypt.hashSync(defaultPassword, 12);
+            const defaultEmail = process.env.DEFAULT_ADMIN_EMAIL || 'admin@example.com';
+            const defaultUsername = process.env.DEFAULT_ADMIN_USERNAME || 'admin';
+            
+            // Insert user - use business_id if column exists
+            try {
+              if (hasBusinessId) {
+                db.prepare(`
+                  INSERT INTO users (id, username, email, password_hash, full_name, role, is_active, business_id)
+                  VALUES (?, ?, ?, ?, 'Super Administrator', 'super_admin', 1, NULL)
+                `).run(adminId, defaultUsername, defaultEmail, adminPasswordHash);
+                console.log('✅ Default super_admin user created');
+              } else {
+                // Fallback: insert without business_id (for old schema compatibility)
+                db.prepare(`
+                  INSERT INTO users (id, username, email, password_hash, full_name, role, is_active)
+                  VALUES (?, ?, ?, ?, 'Super Administrator', 'super_admin', 1)
+                `).run(adminId, defaultUsername, defaultEmail, adminPasswordHash);
+                console.log('✅ Default super_admin user created (without business_id)');
+              }
+              console.log('   ⚠️  IMPORTANT: Change the default password immediately after first login!');
+            } catch (insertError) {
+              // If insert fails, log but don't crash
+              console.log('   Note: Could not create default user:', insertError.message?.substring(0, 100));
+            }
+          }
+        } else {
+          console.log('   Note: Users table not yet created, will retry on next request');
         }
       } catch (userError) {
         // Users table might not exist yet, that's okay
-        console.log('Note: Could not check/create default user:', userError.message);
+        const errorMsg = userError.message || String(userError);
+        if (!errorMsg.includes('no such table')) {
+          console.log('Note: Could not check/create default user:', errorMsg.substring(0, 100));
+        }
       }
     } else {
       console.warn('⚠️  Auth schema file not found. Authentication may not work properly.');

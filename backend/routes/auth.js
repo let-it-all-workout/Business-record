@@ -407,17 +407,10 @@ router.post('/register', registerLimiter, async (req, res) => {
         return { userId, businessId, username, email, fullName };
       });
 
-      const result = transaction();
-      
-      // Re-enable foreign key constraints after successful transaction
+      result = transaction();
+    } finally {
+      // Always re-enable foreign key constraints, even if transaction fails
       db.exec('PRAGMA foreign_keys = ON');
-      
-      // Return result to be used in response
-      return result;
-    } catch (error) {
-      // Re-enable foreign key constraints even if transaction fails
-      db.exec('PRAGMA foreign_keys = ON');
-      throw error;
     }
 
     res.json({

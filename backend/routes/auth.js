@@ -112,6 +112,7 @@ function initializeAuthSchema() {
             
             // Insert user - use business_id if column exists
             try {
+              
               if (hasBusinessId) {
                 db.prepare(`
                   INSERT INTO users (id, username, email, password_hash, full_name, role, is_active, business_id)
@@ -128,8 +129,63 @@ function initializeAuthSchema() {
               }
               console.log('   ⚠️  IMPORTANT: Change the default password immediately after first login!');
             } catch (insertError) {
-              // If insert fails, log but don't crash
-              console.log('   Note: Could not create default user:', insertError.message?.substring(0, 100));
+              // If insert fails due to CHECK constraint, the table needs to be recreated
+              if (insertError.message && insertError.message.includes('CHECK constraint')) {
+                console.log('   ⚠️  CHECK constraint error: Users table has old constraint without super_admin');
+                console.log('   ⚠️  Attempting to fix by recreating users table...');
+                try {
+                  // Since database is empty (userCount.count === 0), we can safely recreate the table
+                  // Temporarily disable foreign key constraints to allow table recreation
+                  db.exec('PRAGMA foreign_keys = OFF');
+                  
+                  // Create new table with correct CHECK constraint
+                  db.exec(`
+                    CREATE TABLE users_new (
+                      id TEXT PRIMARY KEY,
+                      username TEXT UNIQUE NOT NULL,
+                      email TEXT UNIQUE NOT NULL,
+                      password_hash TEXT NOT NULL,
+                      full_name TEXT NOT NULL,
+                      role TEXT NOT NULL CHECK(role IN ('super_admin', 'admin', 'manager', 'staff', 'viewer')),
+                      business_id TEXT,
+                      is_active INTEGER NOT NULL DEFAULT 1,
+                      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                      last_login TEXT,
+                      FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE SET NULL
+                    );
+                  `);
+                  
+                  // Drop old table and rename new one
+                  db.exec('DROP TABLE IF EXISTS users');
+                  db.exec('ALTER TABLE users_new RENAME TO users');
+                  
+                  // Recreate indexes
+                  db.exec('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)');
+                  db.exec('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)');
+                  
+                  // Re-enable foreign key constraints
+                  db.exec('PRAGMA foreign_keys = ON');
+                  
+                  console.log('   ✅ Users table recreated with correct CHECK constraint');
+                  
+                  // Now try to create the user again
+                  db.prepare(`
+                    INSERT INTO users (id, username, email, password_hash, full_name, role, is_active, business_id)
+                    VALUES (?, ?, ?, ?, 'Super Administrator', 'super_admin', 1, NULL)
+                  `).run(adminId, defaultUsername, defaultEmail, adminPasswordHash);
+                  console.log('✅ Default super_admin user created after table fix');
+                  console.log('   ⚠️  IMPORTANT: Change the default password immediately after first login!');
+                } catch (recreateError) {
+                  // Re-enable foreign keys even if recreation failed
+                  db.exec('PRAGMA foreign_keys = ON').catch(() => {});
+                  console.log('   ❌ Failed to recreate users table:', recreateError.message?.substring(0, 100));
+                  console.log('   Note: You may need to use /api/auth/create-super-admin endpoint instead');
+                }
+              } else {
+                // Other insert errors
+                console.log('   Note: Could not create default user:', insertError.message?.substring(0, 100));
+              }
             }
           }
         } else {

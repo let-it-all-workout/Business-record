@@ -1,5 +1,6 @@
 // Service Worker for Business Record PWA
-const CACHE_NAME = 'business-record-v1';
+// Updated cache version to force refresh of old cached code
+const CACHE_NAME = 'business-record-v2';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -31,16 +32,18 @@ self.addEventListener('fetch', (event) => {
 
 // Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
-  const cacheWhitelist = [CACHE_NAME];
   event.waitUntil(
     caches.keys().then((cacheNames) => {
+      // Delete ALL old caches to ensure fresh code
       return Promise.all(
         cacheNames.map((cacheName) => {
-          if (cacheWhitelist.indexOf(cacheName) === -1) {
-            return caches.delete(cacheName);
-          }
+          console.log('Deleting old cache:', cacheName);
+          return caches.delete(cacheName);
         })
       );
+    }).then(() => {
+      // Take control of all pages immediately
+      return self.clients.claim();
     })
   );
 });

@@ -668,6 +668,7 @@ export function verifyToken(req, res, next) {
       return res.status(401).json({ error: 'No token provided' });
     }
 
+    // Try to find session with exact token match
     const session = db.prepare(`
       SELECT s.*, u.username, u.email, u.full_name, u.role, u.is_active, u.business_id
       FROM sessions s
@@ -676,6 +677,9 @@ export function verifyToken(req, res, next) {
     `).get(token);
 
     // #region agent log
+    // Also check if there are any sessions at all, and what tokens exist
+    const allSessions = db.prepare('SELECT token, expires_at, user_id FROM sessions LIMIT 5').all();
+    const tokenMatches = allSessions.filter(s => s.token === token);
     console.log('[verifyToken] Session lookup result:', {
       sessionFound: !!session,
       userId: session?.user_id,
@@ -683,7 +687,12 @@ export function verifyToken(req, res, next) {
       role: session?.role,
       isActive: session?.is_active,
       expiresAt: session?.expires_at,
-      isExpired: session ? isTokenExpired(session.expires_at) : null
+      isExpired: session ? isTokenExpired(session.expires_at) : null,
+      tokenLength: token?.length,
+      tokenPreview: token ? `${token.substring(0, 20)}...` : 'none',
+      totalSessionsInDb: allSessions.length,
+      tokenMatchesInDb: tokenMatches.length,
+      dbTokenPreviews: allSessions.map(s => ({ preview: s.token.substring(0, 20), length: s.token.length }))
     });
     // #endregion
 

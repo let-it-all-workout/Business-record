@@ -43,9 +43,17 @@ export default function LoginForm({ onSwitchToRegister }: { onSwitchToRegister?:
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Debug info - remove after fixing */}
+          <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg text-xs">
+            <strong>Debug Info:</strong><br/>
+            VITE_API_URL: {import.meta.env.VITE_API_URL || 'NOT SET'}<br/>
+            API_BASE_URL: {import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api')}<br/>
+            Mode: {import.meta.env.MODE}
+          </div>
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-              {error}
+              <strong>Error:</strong> {error}
+              <br/><small className="text-xs mt-1 block">Contains "3002": {error.includes('3002') ? 'YES ❌' : 'NO ✅'}</small>
             </div>
           )}
 

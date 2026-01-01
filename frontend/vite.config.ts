@@ -55,6 +55,7 @@ export default defineConfig({
   build: {
     outDir: resolve(__dirname, 'dist'),
     emptyOutDir: true,
+    chunkSizeWarningLimit: 1000, // Increase limit to 1000kb (default is 500kb)
   },
 })
 

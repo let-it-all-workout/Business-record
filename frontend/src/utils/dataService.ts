@@ -2,7 +2,9 @@ import { Product, Sale, GoodsInventory } from '../types';
 import { productsAPI, salesAPI, inventoryAPI, settingsAPI } from './api';
 
 // Get API base URL (same logic as api.ts)
-const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
+// Normalize: remove trailing slash if present
+const rawApiUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
+const API_BASE_URL = rawApiUrl.endsWith('/') ? rawApiUrl.slice(0, -1) : rawApiUrl;
 
 // Helper function to check API availability and throw meaningful errors
 const ensureAPI = async () => {

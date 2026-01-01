@@ -2,7 +2,9 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { User, AuthSession, LoginCredentials, UserRole, Permission, ROLE_PERMISSIONS, Business } from '../types';
 
 // Get API base URL (same logic as api.ts)
-const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
+// Normalize: remove trailing slash if present
+const rawApiUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
+const API_BASE_URL = rawApiUrl.endsWith('/') ? rawApiUrl.slice(0, -1) : rawApiUrl;
 
 // Debug logging (remove in production if needed)
 if (typeof window !== 'undefined') {

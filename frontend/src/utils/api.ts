@@ -2,7 +2,9 @@ import { Product, Sale, GoodsInventory } from '../types';
 
 // Use environment variable for production, relative path for development
 // In production, VITE_API_URL should be set to your Railway backend URL
-const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
+// Normalize: remove trailing slash if present
+const rawApiUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
+const API_BASE_URL = rawApiUrl.endsWith('/') ? rawApiUrl.slice(0, -1) : rawApiUrl;
 
 // Helper function to get auth token
 function getAuthToken(): string | null {
@@ -19,10 +21,13 @@ async function apiCall<T>(endpoint: string, options?: RequestInit, includeBusine
   const token = getAuthToken();
   const businessId = includeBusinessId ? getSelectedBusinessId() : null;
   
+  // Ensure endpoint starts with /
+  const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  
   // Add businessId query param if super admin has selected a business
-  let url = `${API_BASE_URL}${endpoint}`;
+  let url = `${API_BASE_URL}${normalizedEndpoint}`;
   if (businessId && includeBusinessId) {
-    const separator = endpoint.includes('?') ? '&' : '?';
+    const separator = normalizedEndpoint.includes('?') ? '&' : '?';
     url = `${url}${separator}businessId=${encodeURIComponent(businessId)}`;
   }
 

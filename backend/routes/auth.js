@@ -366,15 +366,16 @@ router.post('/register', registerLimiter, async (req, res) => {
     const passwordHash = await hashPassword(password);
 
     // Use transaction to create user and business atomically
-    // IMPORTANT: We need to disable foreign keys temporarily because:
+    // IMPORTANT: We need to disable foreign keys BEFORE the transaction because:
     // 1. businesses.owner_id has NOT NULL constraint and references users.id
     // 2. users.business_id references businesses.id
-    // Solution: Disable foreign keys, create both, then re-enable
-    const transaction = db.transaction(() => {
-      // Temporarily disable foreign key constraints
-      db.pragma('foreign_keys = OFF');
-      
-      try {
+    // Solution: Disable foreign keys before transaction, create both, then re-enable
+    
+    // Disable foreign key constraints BEFORE starting transaction
+    db.exec('PRAGMA foreign_keys = OFF');
+    
+    try {
+      const transaction = db.transaction(() => {
         // Step 1: Create user first (without business_id)
         const userId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         
@@ -404,13 +405,20 @@ router.post('/register', registerLimiter, async (req, res) => {
         }
         
         return { userId, businessId, username, email, fullName };
-      } finally {
-        // Re-enable foreign key constraints
-        db.pragma('foreign_keys = ON');
-      }
-    });
+      });
 
-    const result = transaction();
+      const result = transaction();
+      
+      // Re-enable foreign key constraints after successful transaction
+      db.exec('PRAGMA foreign_keys = ON');
+      
+      // Return result to be used in response
+      return result;
+    } catch (error) {
+      // Re-enable foreign key constraints even if transaction fails
+      db.exec('PRAGMA foreign_keys = ON');
+      throw error;
+    }
 
     res.json({
       success: true,

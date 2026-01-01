@@ -118,7 +118,7 @@ export default function SettingsPanel({
     try {
       setPinStatus({ hasPin: false, loading: true });
       const token = localStorage.getItem('auth_token');
-      const response = await fetch('/api/auth/pin-status', {
+      const response = await fetch(`${API_BASE_URL}/auth/pin-status`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },

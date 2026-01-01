@@ -687,15 +687,36 @@ export function verifyToken(req, res, next) {
     });
     // #endregion
 
-    if (!session || isTokenExpired(session.expires_at) || !session.is_active) {
+    // Check each condition separately for better debugging
+    const expired = session ? isTokenExpired(session.expires_at) : false;
+    const inactive = session ? !session.is_active : false;
+    
+    // #region agent log
+    console.log('[verifyToken] Verification checks:', {
+      hasSession: !!session,
+      expired: expired,
+      inactive: inactive,
+      expiresAt: session?.expires_at,
+      currentTime: new Date().toISOString(),
+      expiresAtDate: session ? new Date(session.expires_at).toISOString() : null,
+      isActive: session?.is_active,
+      willFail: !session || expired || inactive
+    });
+    // #endregion
+    
+    if (!session || expired || inactive) {
       // #region agent log
       console.log('[verifyToken] Token verification failed:', {
         noSession: !session,
-        expired: session ? isTokenExpired(session.expires_at) : false,
-        inactive: session ? !session.is_active : false
+        expired: expired,
+        inactive: inactive,
+        reason: !session ? 'no session' : expired ? 'expired' : 'inactive'
       });
       // #endregion
-      return res.status(401).json({ error: 'Invalid or expired token' });
+      return res.status(401).json({ 
+        error: 'Invalid or expired token',
+        details: !session ? 'Session not found' : expired ? 'Session expired' : 'User inactive'
+      });
     }
 
     req.user = {

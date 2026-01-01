@@ -122,20 +122,46 @@ export default function SettingsPanel({
     try {
       setPinStatus({ hasPin: false, loading: true });
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(`${API_BASE_URL}/auth/pin-status`, {
+      const url = `${API_BASE_URL}/auth/pin-status`;
+      console.log('[SettingsPanel] Checking PIN status from:', url);
+      
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
       });
 
+      console.log('[SettingsPanel] PIN status response:', {
+        status: response.status,
+        ok: response.ok,
+        contentType: response.headers.get('content-type')
+      });
+
       if (response.ok) {
-        const data = await response.json();
-        setPinStatus({ hasPin: data.hasPin, loading: false });
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const data = await response.json();
+          setPinStatus({ hasPin: data.hasPin, loading: false });
+        } else {
+          // Non-JSON response (likely HTML error page)
+          const text = await response.text().catch(() => '');
+          console.error('[SettingsPanel] Non-JSON response from pin-status:', text.substring(0, 200));
+          setPinStatus({ hasPin: false, loading: false });
+        }
       } else {
+        // Error response - try to get JSON error, but handle non-JSON gracefully
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error('[SettingsPanel] PIN status error:', errorData);
+        } else {
+          const errorText = await response.text().catch(() => '');
+          console.error('[SettingsPanel] PIN status error (non-JSON):', errorText.substring(0, 200));
+        }
         setPinStatus({ hasPin: false, loading: false });
       }
     } catch (error) {
-      console.error('Error checking PIN status:', error);
+      console.error('[SettingsPanel] Error checking PIN status:', error);
       setPinStatus({ hasPin: false, loading: false });
     }
   };

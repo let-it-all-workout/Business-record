@@ -2,6 +2,10 @@ import { useState, useEffect } from 'react';
 import { CURRENCIES } from '../constants/currencies';
 import { useAuth } from '../contexts/AuthContext';
 
+// Get API base URL
+const rawApiUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
+const API_BASE_URL = rawApiUrl.endsWith('/') ? rawApiUrl.slice(0, -1) : rawApiUrl;
+
 interface SettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;

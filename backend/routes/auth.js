@@ -426,6 +426,17 @@ router.post('/register', registerLimiter, async (req, res) => {
   } catch (error) {
     console.error('Error registering user:', error);
     const errorMessage = error.message || String(error);
+    
+    // Provide more specific error messages
+    if (errorMessage.includes('UNIQUE constraint failed')) {
+      return res.status(409).json({ error: 'Username or email already exists' });
+    }
+    if (errorMessage.includes('NOT NULL constraint failed')) {
+      return res.status(400).json({ error: 'Missing required data. Please check all fields are filled.' });
+    }
+    if (errorMessage.includes('FOREIGN KEY constraint failed')) {
+      return res.status(400).json({ error: 'Database constraint error. Please try again.' });
+    }
     // Provide more specific error message for debugging
     if (errorMessage.includes('no such table')) {
       res.status(500).json({ error: 'Database tables not initialized. Please check backend logs.' });

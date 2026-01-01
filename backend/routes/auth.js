@@ -17,6 +17,22 @@ const db = new Database(dbPath);
 // Initialize auth schema
 function initializeAuthSchema() {
   try {
+    // First, ensure users table has business_id column if it exists
+    try {
+      const tableInfo = db.prepare("PRAGMA table_info(users)").all();
+      if (tableInfo.length > 0) {
+        // Table exists, check if business_id column exists
+        const hasBusinessId = tableInfo.some(col => col.name === 'business_id');
+        if (!hasBusinessId) {
+          // Add business_id column to existing users table
+          db.exec("ALTER TABLE users ADD COLUMN business_id TEXT;");
+          console.log('✅ Added business_id column to existing users table');
+        }
+      }
+    } catch (e) {
+      // Table doesn't exist yet, will be created by schema.sql with business_id
+    }
+    
     // Try auth-schema.sql first, fallback to schema.sql if it doesn't exist
     let schemaPath = join(__dirname, '../database/auth-schema.sql');
     if (!existsSync(schemaPath)) {
@@ -28,7 +44,29 @@ function initializeAuthSchema() {
       const schema = readFileSync(schemaPath, 'utf8');
       // Only execute auth-related parts
       const authSchema = schema.split('-- Authentication and User Management Schema')[1] || schema;
-      db.exec(authSchema);
+      try {
+        db.exec(authSchema);
+      } catch (schemaError) {
+        // Schema might already be applied, that's okay
+        const errorMsg = schemaError.message || String(schemaError);
+        if (!errorMsg.includes('already exists') && !errorMsg.includes('duplicate')) {
+          console.log('   Note: Schema execution:', errorMsg.substring(0, 100));
+        }
+      }
+      
+      // Ensure business_id exists after schema execution
+      try {
+        const tableInfo = db.prepare("PRAGMA table_info(users)").all();
+        if (tableInfo.length > 0) {
+          const hasBusinessId = tableInfo.some(col => col.name === 'business_id');
+          if (!hasBusinessId) {
+            db.exec("ALTER TABLE users ADD COLUMN business_id TEXT;");
+            console.log('✅ Added business_id column to users table after schema execution');
+          }
+        }
+      } catch (e) {
+        // Ignore errors
+      }
       
       // Create default super_admin user if no users exist
       // Note: This is async but we can't use await in module-level code
@@ -44,12 +82,26 @@ function initializeAuthSchema() {
           const defaultEmail = process.env.DEFAULT_ADMIN_EMAIL || 'admin@example.com';
           const defaultUsername = process.env.DEFAULT_ADMIN_USERNAME || 'admin';
           
-          db.prepare(`
-            INSERT INTO users (id, username, email, password_hash, full_name, role, is_active, business_id)
-            VALUES (?, ?, ?, ?, 'Super Administrator', 'super_admin', 1, NULL)
-          `).run(adminId, defaultUsername, defaultEmail, adminPasswordHash);
-          console.log('✅ Default super_admin user created');
-          console.log('   ⚠️  IMPORTANT: Change the default password immediately after first login!');
+          // Check if business_id column exists before inserting
+          const tableInfo = db.prepare("PRAGMA table_info(users)").all();
+          const hasBusinessId = tableInfo.some(col => col.name === 'business_id');
+          
+          if (hasBusinessId) {
+            db.prepare(`
+              INSERT INTO users (id, username, email, password_hash, full_name, role, is_active, business_id)
+              VALUES (?, ?, ?, ?, 'Super Administrator', 'super_admin', 1, NULL)
+            `).run(adminId, defaultUsername, defaultEmail, adminPasswordHash);
+            console.log('✅ Default super_admin user created');
+            console.log('   ⚠️  IMPORTANT: Change the default password immediately after first login!');
+          } else {
+            // Fallback: insert without business_id (for old schema compatibility)
+            db.prepare(`
+              INSERT INTO users (id, username, email, password_hash, full_name, role, is_active)
+              VALUES (?, ?, ?, ?, 'Super Administrator', 'super_admin', 1)
+            `).run(adminId, defaultUsername, defaultEmail, adminPasswordHash);
+            console.log('✅ Default super_admin user created (without business_id)');
+            console.log('   ⚠️  IMPORTANT: Change the default password immediately after first login!');
+          }
         }
       } catch (userError) {
         // Users table might not exist yet, that's okay

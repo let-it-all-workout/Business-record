@@ -194,6 +194,27 @@ function initializeDatabase() {
       try {
         db.exec(schema);
         console.log('✅ Database schema initialized');
+        
+        // After schema execution, ensure business_id columns exist (migration safety)
+        try {
+          const tablesToCheck = ['users', 'products', 'sales', 'goods_inventories', 'settings'];
+          for (const tableName of tablesToCheck) {
+            try {
+              const tableInfo = db.prepare(`PRAGMA table_info(${tableName})`).all();
+              if (tableInfo.length > 0) {
+                const hasBusinessId = tableInfo.some(col => col.name === 'business_id');
+                if (!hasBusinessId) {
+                  db.exec(`ALTER TABLE ${tableName} ADD COLUMN business_id TEXT;`);
+                  console.log(`   ✅ Added business_id to ${tableName} table`);
+                }
+              }
+            } catch (e) {
+              // Table might not exist, that's okay
+            }
+          }
+        } catch (e) {
+          // Ignore errors in post-schema check
+        }
       } catch (schemaError) {
         const errorMsg = schemaError.message || String(schemaError);
         console.log(`   ⚠️  Schema execution warning: ${errorMsg}`);

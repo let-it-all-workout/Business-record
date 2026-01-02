@@ -20,9 +20,9 @@ This document lists all error codes used in the application and their meanings.
 **User Action:** Try again. If the problem persists, contact support.
 
 ### AUTH-004
-**Message:** Registration failed  
-**Meaning:** Unable to create a new account. Could be due to duplicate username/email or server error.  
-**User Action:** Try again with different credentials. If the problem persists, contact support.
+**Message:** Registration failed (or specific error message from backend)  
+**Meaning:** Unable to create a new account. The error message will specify the exact issue (e.g., duplicate username/email, invalid email format, or other validation errors).  
+**User Action:** Read the specific error message to understand what needs to be corrected. Common issues: duplicate username/email (try different credentials), invalid email format (check email format), or other validation errors. If the problem persists, contact support.
 
 ### AUTH-005
 **Message:** PIN verification failed  

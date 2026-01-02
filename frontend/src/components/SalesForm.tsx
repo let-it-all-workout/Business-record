@@ -8,6 +8,10 @@ interface SalesFormProps {
 }
 
 export default function SalesForm({ products, onSubmit, onCancel }: SalesFormProps) {
+  // #region agent log
+  console.log('[DEBUG] SalesForm component mounted:', {productsCount:products.length,products:products.map(p=>({id:p.id,name:p.name,quantity:p.quantity}))});
+  fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SalesForm.tsx:10',message:'SalesForm mounted',data:{productsCount:products.length,products:products.map(p=>({id:p.id,name:p.name,quantity:p.quantity}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+  // #endregion
   const [selectedProductId, setSelectedProductId] = useState('');
   const [quantity, setQuantity] = useState('');
   const [sellingPrice, setSellingPrice] = useState('');

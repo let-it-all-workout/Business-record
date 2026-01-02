@@ -1321,7 +1321,16 @@ function App() {
                   {products.length > 0 && (
                     <button
                       onClick={() => {
+                        // #region agent log
+                        const buttonData = {productsCount:products.length,productsWithStock:products.filter(p=>p.quantity>0).length};
+                        console.log('[DEBUG] Record Sale button clicked:', buttonData);
+                        fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:1324',message:'Record Sale button clicked',data:buttonData,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+                        // #endregion
                         setShowSalesForm(true);
+                        // #region agent log
+                        console.log('[DEBUG] setShowSalesForm(true) called');
+                        fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:1327',message:'setShowSalesForm called',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+                        // #endregion
                       }}
                       className="btn-success"
                     >
@@ -1437,6 +1446,14 @@ function App() {
 
             {showSalesForm && (
               <div className="mb-6">
+                {/* #region agent log */}
+                {(() => {
+                  const filteredProducts = products.filter(p => p.quantity > 0);
+                  console.log('[DEBUG] SalesForm rendering:', {showSalesForm,productsCount:products.length,filteredCount:filteredProducts.length});
+                  fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:1438',message:'SalesForm rendering',data:{showSalesForm,productsCount:products.length,filteredCount:filteredProducts.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+                  return null;
+                })()}
+                {/* #endregion */}
                 <SalesForm
                   products={products.filter(p => p.quantity > 0)}
                   onSubmit={handleRecordSale}

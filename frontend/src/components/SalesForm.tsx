@@ -31,7 +31,7 @@ export default function SalesForm({ products, onSubmit, onCancel }: SalesFormPro
     }
 
     if (selectedProduct && quantityNum > selectedProduct.quantity) {
-      alert(`Insufficient stock! Only ${selectedProduct.quantity} available.`);
+      alert(`SALE-002: Insufficient stock! Only ${selectedProduct.quantity} available.`);
       return;
     }
 

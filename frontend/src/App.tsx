@@ -448,7 +448,7 @@ function App() {
     if (!product) return;
 
     if (quantity > product.quantity) {
-      alert(`Insufficient stock! Only ${product.quantity} available.`);
+      alert(`SALE-002: Insufficient stock! Only ${product.quantity} available.`);
       return;
     }
 

@@ -81,7 +81,7 @@ export default function SaleGoodForm({ good, onSubmit, onCancel, globalCurrency:
     }
 
     if (quantityNum > good.remainingQuantity) {
-      alert(`Insufficient stock! Only ${good.remainingQuantity} available.`);
+      alert(`SALE-002: Insufficient stock! Only ${good.remainingQuantity} available.`);
       return;
     }
 

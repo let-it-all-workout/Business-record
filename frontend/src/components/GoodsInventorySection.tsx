@@ -116,7 +116,7 @@ export default function GoodsInventorySection({ inventory, onUpdate, onDelete, o
     
     // Validate stock availability
     if (quantity > sellingGood.remainingQuantity) {
-      alert(`Insufficient stock! Only ${sellingGood.remainingQuantity} units available.`);
+      alert(`SALE-002: Insufficient stock! Only ${sellingGood.remainingQuantity} units available.`);
       return;
     }
     

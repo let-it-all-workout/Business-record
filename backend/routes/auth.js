@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import rateLimit from 'express-rate-limit';
 import db from '../database/db-postgres.js';
-import { validateUUIDParam, validateUUID } from '../middleware/validation.js';
+import { validateUUIDParam, validateUUID, sanitizeString, validateEmail } from '../middleware/validation.js';
 import { handleError } from '../middleware/errorHandler.js';
 
 const router = express.Router();
@@ -446,6 +446,111 @@ router.get('/users', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('Error fetching users:', error);
     res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+// Create user within existing business (admin only)
+router.post('/users', verifyToken, async (req, res) => {
+  try {
+    // Only business admins can create users
+    if (req.user.role !== 'admin' || !req.user.businessId) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    let { username, email, password, fullName, role } = req.body;
+
+    // Validate required fields (no businessName needed - user is added to existing business)
+    if (!username || !email || !password || !fullName) {
+      return res.status(400).json({ error: 'Missing required fields: username, email, password, fullName' });
+    }
+
+    // Default role to 'staff' if not provided
+    if (!role) {
+      role = 'staff';
+    }
+
+    // Validate role
+    const allowedRoles = ['admin', 'manager', 'staff', 'viewer'];
+    if (!allowedRoles.includes(role)) {
+      return res.status(400).json({ error: 'Invalid role. Must be one of: admin, manager, staff, viewer' });
+    }
+
+    // Sanitize and validate inputs
+    username = sanitizeString(username, 50);
+    email = email.trim().toLowerCase();
+    fullName = sanitizeString(fullName, 100);
+    
+    // Input validation
+    if (username.length < 3 || username.length > 50) {
+      return res.status(400).json({ error: 'Username must be between 3 and 50 characters' });
+    }
+    
+    if (!validateEmail(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+    
+    // Strong password requirements
+    if (password.length < 12) {
+      return res.status(400).json({ error: 'Password must be at least 12 characters' });
+    }
+    // Check for password complexity
+    const hasUpperCase = /[A-Z]/.test(password);
+    const hasLowerCase = /[a-z]/.test(password);
+    const hasNumbers = /[0-9]/.test(password);
+    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+    
+    if (!hasUpperCase || !hasLowerCase || !hasNumbers || !hasSpecialChar) {
+      return res.status(400).json({ 
+        error: 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character' 
+      });
+    }
+    
+    if (fullName.length < 2 || fullName.length > 100) {
+      return res.status(400).json({ error: 'Full name must be between 2 and 100 characters' });
+    }
+
+    // Check if username or email already exists
+    const existingUser = await db.prepare(`
+      SELECT id FROM users WHERE username = $1 OR email = $2
+    `).get(username, email);
+
+    if (existingUser) {
+      return res.status(409).json({ error: 'Username or email already exists' });
+    }
+
+    // Hash password with bcrypt
+    const passwordHash = await hashPassword(password);
+
+    // Create user within the current business
+    const userResult = await db.prepare(`
+      INSERT INTO users (username, email, password_hash, full_name, role, is_active, business_id)
+      VALUES ($1, $2, $3, $4, $5, true, $6)
+      RETURNING id, username, email, full_name, role, is_active, business_id, created_at
+    `).get(username, email, passwordHash, fullName, role, req.user.businessId);
+
+    res.json({
+      success: true,
+      user: {
+        id: userResult.id,
+        username: userResult.username,
+        email: userResult.email,
+        fullName: userResult.full_name,
+        role: userResult.role,
+        businessId: userResult.business_id,
+        isActive: userResult.is_active,
+        createdAt: userResult.created_at,
+      },
+    });
+  } catch (error) {
+    const errorResponse = handleError(error, req, res, 'Failed to create user. Please try again.');
+    
+    // Handle specific error cases
+    const errorMessage = error.message || String(error);
+    if (errorMessage.includes('UNIQUE constraint') || errorMessage.includes('duplicate key')) {
+      return res.status(409).json({ error: 'Username or email already exists', errorId: errorResponse.errorId });
+    }
+    
+    res.status(500).json(errorResponse);
   }
 });
 

@@ -109,8 +109,8 @@ export default function UserManagement() {
           setError(errorData.error || `Failed to update user: ${response.status}`);
         }
       } else {
-        // Create user
-        const response = await fetch(`${API_BASE_URL}/auth/register`, {
+        // Create user within existing business (use /auth/users endpoint, not /auth/register)
+        const response = await fetch(`${API_BASE_URL}/auth/users`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,

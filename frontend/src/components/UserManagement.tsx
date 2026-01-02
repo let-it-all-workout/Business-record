@@ -70,7 +70,11 @@ export default function UserManagement() {
       }
     } catch (error) {
       console.error('[UserManagement] Error loading users:', error);
-      setError(error instanceof Error ? error.message : 'Failed to load users');
+      if (error instanceof TypeError && (error.message.includes('fetch') || error.message.includes('Failed to fetch'))) {
+        setError(`Network error: Cannot connect to API server at ${API_BASE_URL}. Please check your VITE_API_URL environment variable and ensure the backend is running.`);
+      } else {
+        setError(error instanceof Error ? error.message : 'Failed to load users');
+      }
       setUsers([]);
     } finally {
       setLoading(false);
@@ -131,7 +135,11 @@ export default function UserManagement() {
       }
     } catch (error) {
       console.error('Error saving user:', error);
-      setError(error instanceof Error ? error.message : 'Failed to save user');
+      if (error instanceof TypeError && (error.message.includes('fetch') || error.message.includes('Failed to fetch'))) {
+        setError(`Network error: Cannot connect to API server at ${API_BASE_URL}. Please check your VITE_API_URL environment variable and ensure the backend is running.`);
+      } else {
+        setError(error instanceof Error ? error.message : 'Failed to save user');
+      }
     }
   };
 

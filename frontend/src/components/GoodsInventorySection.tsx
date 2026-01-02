@@ -409,7 +409,10 @@ export default function GoodsInventorySection({ inventory, onUpdate, onDelete, o
         onVerify={async (pin) => {
           try {
             const token = localStorage.getItem('auth_token');
-            const response = await fetch('/api/auth/verify-pin', {
+            const rawApiUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
+            const API_BASE_URL = rawApiUrl.endsWith('/') ? rawApiUrl.slice(0, -1) : rawApiUrl;
+            
+            const response = await fetch(`${API_BASE_URL}/auth/verify-pin`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -426,11 +429,16 @@ export default function GoodsInventorySection({ inventory, onUpdate, onDelete, o
                 setPendingAction(null);
               }
             } else {
-              const error = await response.json();
+              const error = await response.json().catch(() => ({ error: 'Invalid PIN' }));
               setPinError(error.error || 'Invalid PIN');
             }
           } catch (error) {
-            setPinError('Failed to verify PIN. Please try again.');
+            console.error('PIN verification error:', error);
+            if (error instanceof TypeError && error.message.includes('fetch')) {
+              setPinError('Network error: Cannot connect to server. Please check your connection.');
+            } else {
+              setPinError('Failed to verify PIN. Please try again.');
+            }
           }
         }}
         title="Enter PIN to Continue"

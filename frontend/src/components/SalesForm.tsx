@@ -13,6 +13,7 @@ export default function SalesForm({ products, onSubmit, onCancel }: SalesFormPro
   const [sellingPrice, setSellingPrice] = useState('');
 
   const selectedProduct = products.find(p => p.id === selectedProductId);
+  const availableProducts = products.filter(p => p.quantity > 0);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,6 +43,26 @@ export default function SalesForm({ products, onSubmit, onCancel }: SalesFormPro
     onSubmit(selectedProductId, quantityNum, priceNum);
   };
 
+  if (availableProducts.length === 0) {
+    return (
+      <div className="bg-white p-6 rounded-lg shadow-lg">
+        <h2 className="text-2xl font-bold mb-4 text-gray-800">Record Sale</h2>
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+          <p className="text-yellow-800">No products with available stock to sell.</p>
+        </div>
+        <button
+          onClick={onCancel}
+          className="btn-secondary"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+          Close
+        </button>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow-lg">
       <h2 className="text-2xl font-bold mb-4 text-gray-800">Record Sale</h2>
@@ -64,9 +85,7 @@ export default function SalesForm({ products, onSubmit, onCancel }: SalesFormPro
             required
           >
             <option value="">Select a product</option>
-            {products
-              .filter(p => p.quantity > 0)
-              .map((product) => (
+            {availableProducts.map((product) => (
                 <option key={product.id} value={product.id}>
                   {product.name} (Stock: {product.quantity}, Base Price: ${product.price.toFixed(2)})
                 </option>

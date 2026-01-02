@@ -79,6 +79,7 @@ export default function UserManagement() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setError('');
     try {
       const token = localStorage.getItem('auth_token');
@@ -297,6 +298,9 @@ export default function UserManagement() {
           <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-slate-200 mt-4">
             <button 
               type="submit" 
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
               className="btn-primary flex-1 min-w-0 whitespace-nowrap relative z-10"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -306,7 +310,10 @@ export default function UserManagement() {
             </button>
             <button 
               type="button" 
-              onClick={resetForm}
+              onClick={(e) => {
+                e.stopPropagation();
+                resetForm();
+              }}
               className="btn-secondary flex-1 min-w-0 whitespace-nowrap relative z-10"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

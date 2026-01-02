@@ -98,7 +98,7 @@ export default function GoodsInventorySection({ inventory, onUpdate, onDelete, o
     
     // Show success message
     const currencySymbol = CURRENCIES.find(c => c.code === globalCurrency)?.symbol || '$';
-    alert(`Product "${goodData.name}" added successfully!\n${goodData.quantity} units @ ${currencySymbol}${goodData.unitPrice.toFixed(2)} ${globalCurrency} per unit`);
+    alert(`Product "${goodData.name}" added successfully!\n${goodData.quantity} units @ ${currencySymbol}${Number(goodData.unitPrice || 0).toFixed(2)} ${globalCurrency} per unit`);
   };
 
   const handleEditGood = (updatedGood: Good) => {

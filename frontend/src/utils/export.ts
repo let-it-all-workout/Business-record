@@ -88,8 +88,8 @@ export function exportInventoryToCSV(inventories: GoodsInventory[], currency: st
         'Quantity': good.quantity,
         'Remaining': good.remainingQuantity,
         'Sold': good.quantity - good.remainingQuantity,
-        'Unit Price': `${currencySymbol}${good.unitPrice.toFixed(2)}`,
-        'Total Value': `${currencySymbol}${(good.remainingQuantity * good.unitPrice).toFixed(2)}`,
+        'Unit Price': `${currencySymbol}${Number(good.unitPrice || 0).toFixed(2)}`,
+        'Total Value': `${currencySymbol}${(good.remainingQuantity * Number(good.unitPrice || 0)).toFixed(2)}`,
         'Currency': good.currency,
       });
     });

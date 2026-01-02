@@ -93,11 +93,12 @@ export default function SaleGoodForm({ good, onSubmit, onCancel, globalCurrency:
     onSubmit(quantityNum, priceNum);
   };
 
+  const unitPriceNum = Number(good.unitPrice || 0);
   const profit = sellingPrice && quantity 
-    ? (parseFloat(sellingPrice) - good.unitPrice) * parseInt(quantity, 10)
+    ? (parseFloat(sellingPrice) - unitPriceNum) * parseInt(quantity, 10)
     : 0;
-  const profitMargin = sellingPrice && good.unitPrice > 0
-    ? ((parseFloat(sellingPrice) - good.unitPrice) / good.unitPrice) * 100
+  const profitMargin = sellingPrice && unitPriceNum > 0
+    ? ((parseFloat(sellingPrice) - unitPriceNum) / unitPriceNum) * 100
     : 0;
 
   return (
@@ -112,7 +113,7 @@ export default function SaleGoodForm({ good, onSubmit, onCancel, globalCurrency:
           <span className="font-medium">Available:</span> {good.remainingQuantity} units
         </p>
         <p className="text-sm text-gray-700">
-          <span className="font-medium">Unit Price:</span> {CURRENCIES.find(c => c.code === good.currency)?.symbol || '$'}{good.unitPrice.toFixed(2)} {good.currency}
+          <span className="font-medium">Unit Price:</span> {CURRENCIES.find(c => c.code === good.currency)?.symbol || '$'}{Number(good.unitPrice || 0).toFixed(2)} {good.currency}
         </p>
       </div>
 
@@ -172,7 +173,7 @@ export default function SaleGoodForm({ good, onSubmit, onCancel, globalCurrency:
                 </span>
               </p>
               <p className="text-xs text-gray-500">
-                Cost: {CURRENCIES.find(c => c.code === good.currency)?.symbol || '$'}{(good.unitPrice * parseInt(quantity || '0', 10)).toFixed(2)} {good.currency}
+                Cost: {CURRENCIES.find(c => c.code === good.currency)?.symbol || '$'}{(unitPriceNum * parseInt(quantity || '0', 10)).toFixed(2)} {good.currency}
               </p>
             </div>
           )}

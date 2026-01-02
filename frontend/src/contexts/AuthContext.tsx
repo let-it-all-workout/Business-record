@@ -99,8 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           throw new Error('Health check failed');
         }
       } catch (healthError) {
-        const apiUrl = API_BASE_URL || 'backend server';
-        throw new Error(`Cannot connect to API server at ${apiUrl}. Please check your VITE_API_URL environment variable and ensure the backend is running.`);
+        throw new Error('Error: try again later');
       }
       
       const response = await fetch(loginUrl, {
@@ -113,9 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        const apiUrl = API_BASE_URL || 'backend server';
-        const errorMsg = `Cannot connect to API server at ${apiUrl}. Please check your VITE_API_URL environment variable and ensure the backend is running.`;
-        throw new Error(errorMsg);
+        throw new Error('Error: try again later');
       }
 
       if (!response.ok) {

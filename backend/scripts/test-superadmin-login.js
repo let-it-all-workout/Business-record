@@ -98,7 +98,7 @@ async function testLogin() {
     console.log('\n💡 Troubleshooting Tips:');
     console.log('─'.repeat(60));
     console.log('1. Make sure you\'re using the correct password');
-    console.log('2. Try logging in with email instead: novagadget72@gmail.com');
+    console.log('2. Try logging in with email instead: superadmin@example.com');
     console.log('3. Check Railway logs for login errors');
     console.log('4. Verify the password hash was migrated correctly from SQLite');
     console.log('5. If password doesn\'t work, you may need to reset it');

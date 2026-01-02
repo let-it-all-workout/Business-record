@@ -69,7 +69,7 @@ async function checkUsers() {
     console.log('─'.repeat(60));
     console.log('Try logging in with:');
     console.log('  Username: superadmin');
-    console.log('  Email: novagadget72@gmail.com');
+    console.log('  Email: superadmin@example.com');
     console.log('');
     console.log('If login fails, check:');
     console.log('  1. Password is correct');

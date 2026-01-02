@@ -29,6 +29,11 @@ This document lists all error codes used in the application and their meanings.
 **Meaning:** The PIN entered is incorrect or PIN verification service is unavailable.  
 **User Action:** Check your PIN and try again.
 
+### AUTH-006
+**Message:** Password format invalid  
+**Meaning:** Password does not meet complexity requirements. The error message will specify what is missing (uppercase, lowercase, number, or special character).  
+**User Action:** Update your password to include the missing requirements as specified in the error message.
+
 ## Network Errors
 
 ### NET-001

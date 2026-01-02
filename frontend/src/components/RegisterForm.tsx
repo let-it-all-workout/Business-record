@@ -41,12 +41,25 @@ export default function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () 
       }
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'AUTH-004: Registration failed' }));
-        const errorMsg = errorData.error || 'AUTH-004: Registration failed';
-        if (!errorMsg.includes('AUTH-') && !errorMsg.includes('NET-')) {
-          throw new Error('AUTH-004: Registration failed');
+        const errorData = await response.json().catch(() => ({ error: 'Registration failed' }));
+        let backendErrorMsg = errorData.error || 'Registration failed';
+        
+        // Add error code prefix while preserving the descriptive message
+        if (backendErrorMsg.includes('Password must contain at least one uppercase') || 
+            backendErrorMsg.includes('uppercase letter, one lowercase letter')) {
+          throw new Error(`AUTH-006: ${backendErrorMsg}`);
+        } else if (backendErrorMsg.includes('Password must be at least 6 characters')) {
+          throw new Error(`USER-004: ${backendErrorMsg}`);
+        } else if (backendErrorMsg.includes('Invalid email format')) {
+          throw new Error(`AUTH-004: ${backendErrorMsg}`);
+        } else if (backendErrorMsg.includes('already exists') || backendErrorMsg.includes('duplicate')) {
+          throw new Error(`AUTH-004: ${backendErrorMsg}`);
+        } else if (!backendErrorMsg.includes('AUTH-') && !backendErrorMsg.includes('NET-') && !backendErrorMsg.includes('USER-')) {
+          throw new Error(`AUTH-004: ${backendErrorMsg}`);
+        } else {
+          // Already has error code, use as-is
+          throw new Error(backendErrorMsg);
         }
-        throw new Error(errorMsg);
       }
 
       const data = await response.json();

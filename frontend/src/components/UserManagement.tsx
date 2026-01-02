@@ -138,11 +138,15 @@ export default function UserManagement() {
           const backendErrorMsg = errorData.error || `Failed to ${editingUser ? 'update' : 'create'} user: ${response.status}`;
           
           // Add error code prefix while preserving descriptive message
+          // Normalize error message for comparison (case-insensitive)
+          const normalizedMsg = backendErrorMsg.toLowerCase();
           let errorMsg = backendErrorMsg;
-          if (backendErrorMsg.includes('Password must contain at least one uppercase') || 
-              backendErrorMsg.includes('uppercase letter, one lowercase letter')) {
+          if (normalizedMsg.includes('password must contain') && 
+              (normalizedMsg.includes('uppercase') || normalizedMsg.includes('lowercase') || 
+               normalizedMsg.includes('special character') || normalizedMsg.includes('number'))) {
             errorMsg = `AUTH-006: ${backendErrorMsg}`;
-          } else if (backendErrorMsg.includes('Password must be at least 6 characters')) {
+          } else if (normalizedMsg.includes('password must be at least') || 
+                     (normalizedMsg.includes('password') && normalizedMsg.includes('6 characters'))) {
             errorMsg = `USER-004: ${backendErrorMsg}`;
           } else if (!backendErrorMsg.includes('USER-') && !backendErrorMsg.includes('NET-') && !backendErrorMsg.includes('AUTH-')) {
             errorMsg = editingUser ? `USER-002: ${backendErrorMsg}` : `USER-001: ${backendErrorMsg}`;
@@ -158,11 +162,15 @@ export default function UserManagement() {
         let errorMsg = error instanceof Error ? error.message : 'Failed to create user';
         
         // Add error code prefix while preserving descriptive message
-        if (errorMsg.includes('Password must contain at least one uppercase') || 
-            errorMsg.includes('uppercase letter, one lowercase letter')) {
+        // Normalize error message for comparison (case-insensitive)
+        const normalizedErrorMsg = errorMsg.toLowerCase();
+        if (normalizedErrorMsg.includes('password must contain') && 
+            (normalizedErrorMsg.includes('uppercase') || normalizedErrorMsg.includes('lowercase') || 
+             normalizedErrorMsg.includes('special character') || normalizedErrorMsg.includes('number'))) {
           // Remove any existing error code prefix before adding AUTH-006
           errorMsg = `AUTH-006: ${errorMsg.replace(/^(AUTH-006: |USER-001: |USER-002: )?/, '')}`;
-        } else if (errorMsg.includes('Password must be at least 6 characters')) {
+        } else if (normalizedErrorMsg.includes('password must be at least') || 
+                   (normalizedErrorMsg.includes('password') && normalizedErrorMsg.includes('6 characters'))) {
           errorMsg = `USER-004: ${errorMsg.replace(/^(USER-004: |USER-001: |USER-002: )?/, '')}`;
         } else if (!errorMsg.includes('USER-') && !errorMsg.includes('NET-') && !errorMsg.includes('AUTH-')) {
           errorMsg = editingUser ? `USER-002: ${errorMsg}` : `USER-001: ${errorMsg}`;

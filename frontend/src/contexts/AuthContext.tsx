@@ -49,13 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
       });
 
-      // #region agent log
-      console.log('[AuthContext] /auth/me response:', {
-        status: response.status,
-        ok: response.ok,
-        statusText: response.statusText
-      });
-      // #endregion
+      // Debug logging removed for security
 
       if (response.ok) {
         const contentType = response.headers.get('content-type');

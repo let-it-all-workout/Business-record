@@ -44,18 +44,7 @@ function App() {
   const { isAuthenticated, loading, user, logout, hasPermission, business, isSuperAdmin, canSeeFinancialData } = useAuth();
   const isBusinessAdmin = user?.role === 'admin' || isSuperAdmin;
   
-  // #region agent log
-  useEffect(() => {
-    console.log('[App] User state:', {
-      isAuthenticated,
-      loading,
-      user: user ? { id: user.id, username: user.username, role: user.role } : null,
-      isSuperAdmin,
-      isBusinessAdmin,
-      hasPermissionUsersRead: hasPermission('users:read')
-    });
-  }, [isAuthenticated, loading, user, isSuperAdmin, isBusinessAdmin, hasPermission]);
-  // #endregion
+  // Debug logging removed for security
   const [showRegister, setShowRegister] = useState(false);
   const [selectedBusinessId, setSelectedBusinessId] = useState<string | null>(
     localStorage.getItem('selected_business_id')
@@ -192,7 +181,7 @@ function App() {
         console.log('Starting to load data...');
         
         // Load currency
-        console.log('Loading currency...');
+        // Debug logging removed
         const currency = await dataService.getCurrency();
         setGlobalCurrency(currency);
         console.log('Currency loaded:', currency);

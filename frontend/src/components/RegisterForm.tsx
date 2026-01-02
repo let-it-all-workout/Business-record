@@ -44,15 +44,22 @@ export default function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () 
         const errorData = await response.json().catch(() => ({ error: 'Registration failed' }));
         let backendErrorMsg = errorData.error || 'Registration failed';
         
+        // Normalize error message for comparison (case-insensitive)
+        const normalizedMsg = backendErrorMsg.toLowerCase();
+        
         // Add error code prefix while preserving the descriptive message
-        if (backendErrorMsg.includes('Password must contain at least one uppercase') || 
-            backendErrorMsg.includes('uppercase letter, one lowercase letter')) {
+        // Check for password format/complexity errors first
+        if (normalizedMsg.includes('password must contain') && 
+            (normalizedMsg.includes('uppercase') || normalizedMsg.includes('lowercase') || 
+             normalizedMsg.includes('special character') || normalizedMsg.includes('number'))) {
           throw new Error(`AUTH-006: ${backendErrorMsg}`);
-        } else if (backendErrorMsg.includes('Password must be at least 6 characters')) {
+        } else if (normalizedMsg.includes('password must be at least') || 
+                   normalizedMsg.includes('password') && normalizedMsg.includes('6 characters')) {
           throw new Error(`USER-004: ${backendErrorMsg}`);
-        } else if (backendErrorMsg.includes('Invalid email format')) {
+        } else if (normalizedMsg.includes('invalid email') || normalizedMsg.includes('email format')) {
           throw new Error(`AUTH-004: ${backendErrorMsg}`);
-        } else if (backendErrorMsg.includes('already exists') || backendErrorMsg.includes('duplicate')) {
+        } else if (normalizedMsg.includes('already exists') || normalizedMsg.includes('duplicate') || 
+                   normalizedMsg.includes('username') && normalizedMsg.includes('taken')) {
           throw new Error(`AUTH-004: ${backendErrorMsg}`);
         } else if (!backendErrorMsg.includes('AUTH-') && !backendErrorMsg.includes('NET-') && !backendErrorMsg.includes('USER-')) {
           throw new Error(`AUTH-004: ${backendErrorMsg}`);

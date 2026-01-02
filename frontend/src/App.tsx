@@ -1720,8 +1720,11 @@ function App() {
               const token = localStorage.getItem('auth_token');
               const rawApiUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
               const API_BASE_URL = rawApiUrl.endsWith('/') ? rawApiUrl.slice(0, -1) : rawApiUrl;
-              
-              const response = await fetch(`${API_BASE_URL}/auth/verify-pin`, {
+              // #region agent log
+              fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:1723',message:'PIN verify - before fetch',data:{API_BASE_URL,hasToken:!!token,rawApiUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+              // #endregion
+              const verifyPinUrl = `${API_BASE_URL}/auth/verify-pin`;
+              const response = await fetch(verifyPinUrl, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -1730,6 +1733,9 @@ function App() {
                 body: JSON.stringify({ pin }),
               });
 
+              // #region agent log
+              fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:1733',message:'PIN verify response received',data:{status:response.status,ok:response.ok,statusText:response.statusText,url:response.url},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+              // #endregion
               if (response.ok) {
                 setShowPINVerification(false);
                 setPinError('');
@@ -1739,10 +1745,18 @@ function App() {
                 }
               } else {
                 const error = await response.json().catch(() => ({ error: 'Invalid PIN' }));
+                // #region agent log
+                fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:1741',message:'PIN verify error response',data:{status:response.status,error},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                // #endregion
                 setPinError(error.error || 'Invalid PIN');
               }
             } catch (error) {
               console.error('PIN verification error:', error);
+              // #region agent log
+              const errorData = {errorType:error?.constructor?.name,errorMessage:error instanceof Error?error.message:String(error),isTypeError:error instanceof TypeError,isFetchError:error instanceof TypeError&&error.message.includes('fetch')};
+              console.log('[DEBUG] PIN verify exception:', errorData);
+              fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:1744',message:'PIN verify exception caught',data:errorData,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+              // #endregion
               if (error instanceof TypeError && error.message.includes('fetch')) {
                 setPinError('Network error: Cannot connect to server. Please check your connection.');
               } else {

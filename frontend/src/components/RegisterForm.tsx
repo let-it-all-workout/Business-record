@@ -37,13 +37,16 @@ export default function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () 
 
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        const apiUrl = API_BASE_URL || 'backend server';
-        throw new Error(`Cannot connect to API server at ${apiUrl}. Please check your VITE_API_URL environment variable and ensure the backend is running.`);
+        throw new Error('AUTH-001: Error: try again later');
       }
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Registration failed' }));
-        throw new Error(errorData.error || 'Registration failed');
+        const errorData = await response.json().catch(() => ({ error: 'AUTH-004: Registration failed' }));
+        const errorMsg = errorData.error || 'AUTH-004: Registration failed';
+        if (!errorMsg.includes('AUTH-') && !errorMsg.includes('NET-')) {
+          throw new Error('AUTH-004: Registration failed');
+        }
+        throw new Error(errorMsg);
       }
 
       const data = await response.json();

@@ -71,9 +71,14 @@ export default function UserManagement() {
     } catch (error) {
       console.error('[UserManagement] Error loading users:', error);
       if (error instanceof TypeError && (error.message.includes('fetch') || error.message.includes('Failed to fetch'))) {
-        setError(`Network error: Cannot connect to API server at ${API_BASE_URL}. Please check your VITE_API_URL environment variable and ensure the backend is running.`);
+        setError('NET-001: Error: try again later');
       } else {
-        setError(error instanceof Error ? error.message : 'Failed to load users');
+        const errorMsg = error instanceof Error ? error.message : 'USER-003: Failed to load users';
+        if (!errorMsg.includes('USER-') && !errorMsg.includes('NET-')) {
+          setError('USER-003: Failed to load users');
+        } else {
+          setError(errorMsg);
+        }
       }
       setUsers([]);
     } finally {
@@ -136,9 +141,15 @@ export default function UserManagement() {
     } catch (error) {
       console.error('Error saving user:', error);
       if (error instanceof TypeError && (error.message.includes('fetch') || error.message.includes('Failed to fetch'))) {
-        setError(`Network error: Cannot connect to API server at ${API_BASE_URL}. Please check your VITE_API_URL environment variable and ensure the backend is running.`);
+        setError('NET-001: Error: try again later');
       } else {
-        setError(error instanceof Error ? error.message : 'Failed to save user');
+        const errorMsg = error instanceof Error ? error.message : 'USER-001: Failed to create user';
+        // Add error code if not present
+        if (!errorMsg.includes('USER-') && !errorMsg.includes('NET-') && !errorMsg.includes('AUTH-')) {
+          setError(editingUser ? 'USER-002: Failed to update user' : 'USER-001: Failed to create user');
+        } else {
+          setError(errorMsg);
+        }
       }
     }
   };

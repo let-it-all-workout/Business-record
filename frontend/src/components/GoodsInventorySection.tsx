@@ -429,15 +429,15 @@ export default function GoodsInventorySection({ inventory, onUpdate, onDelete, o
                 setPendingAction(null);
               }
             } else {
-              const error = await response.json().catch(() => ({ error: 'Invalid PIN' }));
-              setPinError(error.error || 'Invalid PIN');
+              const error = await response.json().catch(() => ({ error: 'AUTH-005: PIN verification failed' }));
+              setPinError(error.error || 'AUTH-005: PIN verification failed');
             }
           } catch (error) {
             console.error('PIN verification error:', error);
             if (error instanceof TypeError && error.message.includes('fetch')) {
-              setPinError('Network error: Cannot connect to server. Please check your connection.');
+              setPinError('NET-001: Error: try again later');
             } else {
-              setPinError('Failed to verify PIN. Please try again.');
+              setPinError('AUTH-005: PIN verification failed');
             }
           }
         }}

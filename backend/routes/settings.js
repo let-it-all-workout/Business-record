@@ -1,13 +1,13 @@
 import express from 'express';
-import db from '../database/db.js';
+import db from '../database/db-postgres.js';
 import { verifyToken } from './auth.js';
 
 const router = express.Router();
 
 // Get setting (requires authentication)
-router.get('/:key', verifyToken, (req, res) => {
+router.get('/:key', verifyToken, async (req, res) => {
   try {
-    const setting = db.prepare('SELECT value FROM settings WHERE key = ?').get(req.params.key);
+    const setting = await db.prepare('SELECT value FROM settings WHERE key = $1').get(req.params.key);
     
     if (!setting) {
       return res.json({ value: null });
@@ -21,16 +21,19 @@ router.get('/:key', verifyToken, (req, res) => {
 });
 
 // Set setting (requires authentication)
-router.post('/:key', verifyToken, (req, res) => {
+router.post('/:key', verifyToken, async (req, res) => {
   try {
-    const { value } = req.body;
+    const { value, businessId } = req.body;
     const now = new Date().toISOString();
+    
+    // Use business_id from user if not provided, or null for global settings
+    const targetBusinessId = businessId || req.user.businessId || null;
 
-    db.prepare(`
-      INSERT INTO settings (key, value, updated_at)
-      VALUES (?, ?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?
-    `).run(req.params.key, value, now, value, now);
+    await db.prepare(`
+      INSERT INTO settings (key, value, business_id, updated_at)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT(key, business_id) DO UPDATE SET value = $2, updated_at = $4
+    `).run(req.params.key, value, targetBusinessId, now);
 
     res.json({ message: 'Setting updated successfully' });
   } catch (error) {

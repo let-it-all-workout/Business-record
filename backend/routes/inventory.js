@@ -1,5 +1,5 @@
 import express from 'express';
-import db from '../database/db.js';
+import db from '../database/db-postgres.js';
 import { verifyToken } from './auth.js';
 
 const router = express.Router();
@@ -18,7 +18,7 @@ function getBusinessFilter(req) {
 }
 
 // Get all goods inventories
-router.get('/', verifyToken, (req, res) => {
+router.get('/', verifyToken, async (req, res) => {
   try {
     const filter = getBusinessFilter(req);
     
@@ -26,39 +26,40 @@ router.get('/', verifyToken, (req, res) => {
       return res.status(403).json({ error: 'Business context required' });
     }
 
-    // For regular users, include data with NULL/empty business_id (old data compatibility)
-    // For super admin selecting a business, also include NULL/empty business_id (legacy data)
+    // For regular users, include data with NULL business_id (old data compatibility)
     const query = filter.isSuperAdmin && filter.businessId
-      ? `SELECT * FROM goods_inventories WHERE (business_id = ? OR business_id IS NULL OR business_id = '') ORDER BY created_at DESC`
+      ? `SELECT * FROM goods_inventories WHERE (business_id = $1 OR business_id IS NULL) ORDER BY created_at DESC`
       : filter.isSuperAdmin
       ? `SELECT * FROM goods_inventories ORDER BY created_at DESC`
-      : `SELECT * FROM goods_inventories WHERE (business_id = ? OR business_id IS NULL OR business_id = '') ORDER BY created_at DESC`;
+      : `SELECT * FROM goods_inventories WHERE (business_id = $1 OR business_id IS NULL) ORDER BY created_at DESC`;
     
     const inventories = filter.isSuperAdmin && !filter.businessId
-      ? db.prepare(query).all()
-      : db.prepare(query).all(filter.businessId);
+      ? await db.prepare(query).all()
+      : await db.prepare(query).all(filter.businessId);
 
-    // Get goods for each inventory
-    const inventoriesWithGoods = inventories.map(inventory => {
-      const goods = db.prepare(`
-        SELECT * FROM goods WHERE inventory_id = ? ORDER BY created_at ASC
-      `).all(inventory.id);
+    // Get goods for each inventory (async)
+    const inventoriesWithGoods = await Promise.all(
+      inventories.map(async (inventory) => {
+        const goods = await db.prepare(`
+          SELECT * FROM goods WHERE inventory_id = $1 ORDER BY created_at ASC
+        `).all(inventory.id);
 
-      return {
-        id: inventory.id,
-        name: inventory.name,
-        date: inventory.date,
-        createdAt: inventory.created_at,
-        goods: goods.map(good => ({
-          id: good.id,
-          name: good.name,
-          quantity: good.quantity,
-          remainingQuantity: good.remaining_quantity,
-          unitPrice: good.unit_price,
-          currency: good.currency,
-        })),
-      };
-    });
+        return {
+          id: inventory.id,
+          name: inventory.name,
+          date: inventory.date,
+          createdAt: inventory.created_at,
+          goods: goods.map(good => ({
+            id: good.id,
+            name: good.name,
+            quantity: good.quantity,
+            remainingQuantity: good.remaining_quantity,
+            unitPrice: good.unit_price,
+            currency: good.currency,
+          })),
+        };
+      })
+    );
 
     res.json(inventoriesWithGoods);
   } catch (error) {
@@ -68,9 +69,9 @@ router.get('/', verifyToken, (req, res) => {
 });
 
 // Get single inventory
-router.get('/:id', verifyToken, (req, res) => {
+router.get('/:id', verifyToken, async (req, res) => {
   try {
-    const inventory = db.prepare('SELECT * FROM goods_inventories WHERE id = ?').get(req.params.id);
+    const inventory = await db.prepare('SELECT * FROM goods_inventories WHERE id = $1').get(req.params.id);
     
     if (!inventory) {
       return res.status(404).json({ error: 'Inventory not found' });
@@ -81,7 +82,7 @@ router.get('/:id', verifyToken, (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const goods = db.prepare('SELECT * FROM goods WHERE inventory_id = ?').all(inventory.id);
+    const goods = await db.prepare('SELECT * FROM goods WHERE inventory_id = $1').all(inventory.id);
 
     res.json({
       ...inventory,
@@ -101,7 +102,7 @@ router.get('/:id', verifyToken, (req, res) => {
 });
 
 // Create goods inventory
-router.post('/', verifyToken, (req, res) => {
+router.post('/', verifyToken, async (req, res) => {
   try {
     const { name, date, goods, businessId } = req.body;
     
@@ -117,32 +118,24 @@ router.post('/', verifyToken, (req, res) => {
       return res.status(400).json({ error: 'Business context required' });
     }
 
-    const id = Date.now().toString();
     const now = new Date().toISOString();
 
-    // Insert inventory
-    db.prepare(`
-      INSERT INTO goods_inventories (id, name, date, business_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(id, name, date, targetBusinessId, now, now);
+    // Insert inventory (PostgreSQL will generate UUID)
+    const inventoryResult = await db.prepare(`
+      INSERT INTO goods_inventories (name, date, business_id, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id
+    `).run(name, date, targetBusinessId, now, now);
+    
+    const id = inventoryResult.id;
 
     // Insert goods if provided
     if (goods && goods.length > 0) {
-      const insertGood = db.prepare(`
-        INSERT INTO goods (id, inventory_id, name, quantity, remaining_quantity, unit_price, currency)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `);
-
       for (const good of goods) {
-        insertGood.run(
-          good.id || `good-${Date.now()}-${Math.random()}`,
-          id,
-          good.name,
-          good.quantity,
-          good.remainingQuantity || good.quantity,
-          good.unitPrice,
-          good.currency || 'USD'
-        );
+        await db.prepare(`
+          INSERT INTO goods (inventory_id, name, quantity, remaining_quantity, unit_price, currency)
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `).run(id, good.name, good.quantity, good.remainingQuantity || good.quantity, good.unitPrice, good.currency || 'USD');
       }
     }
 
@@ -154,10 +147,10 @@ router.post('/', verifyToken, (req, res) => {
 });
 
 // Update goods inventory
-router.put('/:id', verifyToken, (req, res) => {
+router.put('/:id', verifyToken, async (req, res) => {
   try {
     // Check inventory exists and user has access
-    const inventory = db.prepare('SELECT business_id FROM goods_inventories WHERE id = ?').get(req.params.id);
+    const inventory = await db.prepare('SELECT business_id FROM goods_inventories WHERE id = $1').get(req.params.id);
     if (!inventory) {
       return res.status(404).json({ error: 'Inventory not found' });
     }
@@ -171,34 +164,24 @@ router.put('/:id', verifyToken, (req, res) => {
     const now = new Date().toISOString();
 
     // Update inventory
-    db.prepare(`
+    await db.prepare(`
       UPDATE goods_inventories 
-      SET name = ?, date = ?, updated_at = ?
-      WHERE id = ?
+      SET name = $1, date = $2, updated_at = $3
+      WHERE id = $4
     `).run(name, date, now, req.params.id);
 
     // Update goods if provided
     if (goods) {
       // Delete existing goods
-      db.prepare('DELETE FROM goods WHERE inventory_id = ?').run(req.params.id);
+      await db.prepare('DELETE FROM goods WHERE inventory_id = $1').run(req.params.id);
 
       // Insert updated goods
       if (goods.length > 0) {
-        const insertGood = db.prepare(`
-          INSERT INTO goods (id, inventory_id, name, quantity, remaining_quantity, unit_price, currency)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `);
-
         for (const good of goods) {
-          insertGood.run(
-            good.id || `good-${Date.now()}-${Math.random()}`,
-            req.params.id,
-            good.name,
-            good.quantity,
-            good.remainingQuantity || good.quantity,
-            good.unitPrice,
-            good.currency || 'USD'
-          );
+          await db.prepare(`
+            INSERT INTO goods (inventory_id, name, quantity, remaining_quantity, unit_price, currency)
+            VALUES ($1, $2, $3, $4, $5, $6)
+          `).run(req.params.id, good.name, good.quantity, good.remainingQuantity || good.quantity, good.unitPrice, good.currency || 'USD');
         }
       }
     }
@@ -211,10 +194,10 @@ router.put('/:id', verifyToken, (req, res) => {
 });
 
 // Delete goods inventory
-router.delete('/:id', verifyToken, (req, res) => {
+router.delete('/:id', verifyToken, async (req, res) => {
   try {
     // Check inventory exists and user has access
-    const inventory = db.prepare('SELECT business_id FROM goods_inventories WHERE id = ?').get(req.params.id);
+    const inventory = await db.prepare('SELECT business_id FROM goods_inventories WHERE id = $1').get(req.params.id);
     if (!inventory) {
       return res.status(404).json({ error: 'Inventory not found' });
     }
@@ -223,7 +206,7 @@ router.delete('/:id', verifyToken, (req, res) => {
     if (!req.isSuperAdmin && inventory.business_id !== req.user.businessId) {
       return res.status(403).json({ error: 'Access denied' });
     }
-    const result = db.prepare('DELETE FROM goods_inventories WHERE id = ?').run(req.params.id);
+    const result = await db.prepare('DELETE FROM goods_inventories WHERE id = $1').run(req.params.id);
 
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Inventory not found' });

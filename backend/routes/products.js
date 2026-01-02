@@ -1,5 +1,5 @@
 import express from 'express';
-import db from '../database/db.js';
+import db from '../database/db-postgres.js';
 import { verifyToken } from './auth.js';
 
 const router = express.Router();
@@ -18,7 +18,7 @@ function getBusinessFilter(req) {
 }
 
 // Get all products
-router.get('/', verifyToken, (req, res) => {
+router.get('/', verifyToken, async (req, res) => {
   try {
     const filter = getBusinessFilter(req);
     
@@ -26,46 +26,48 @@ router.get('/', verifyToken, (req, res) => {
       return res.status(403).json({ error: 'Business context required' });
     }
 
-    // For regular users, include data with NULL/empty business_id (old data compatibility)
-    // For super admin selecting a business, also include NULL/empty business_id (legacy data)
+    // For regular users, include data with NULL business_id (old data compatibility)
+    // For super admin selecting a business, also include NULL business_id (legacy data)
     const query = filter.isSuperAdmin && filter.businessId
-      ? `SELECT * FROM products WHERE (business_id = ? OR business_id IS NULL OR business_id = '') ORDER BY created_at DESC`
+      ? `SELECT * FROM products WHERE (business_id = $1 OR business_id IS NULL) ORDER BY created_at DESC`
       : filter.isSuperAdmin
       ? `SELECT * FROM products ORDER BY created_at DESC`
-      : `SELECT * FROM products WHERE (business_id = ? OR business_id IS NULL OR business_id = '') ORDER BY created_at DESC`;
+      : `SELECT * FROM products WHERE (business_id = $1 OR business_id IS NULL) ORDER BY created_at DESC`;
     
     const products = filter.isSuperAdmin && !filter.businessId
-      ? db.prepare(query).all()
-      : db.prepare(query).all(filter.businessId);
+      ? await db.prepare(query).all()
+      : await db.prepare(query).all(filter.businessId);
 
-    // Get batches for each product
-    const productsWithBatches = products.map(product => {
-      const batches = db.prepare(`
-        SELECT * FROM stock_batches WHERE product_id = ? ORDER BY purchase_date ASC
-      `).all(product.id);
+    // Get batches for each product (async)
+    const productsWithBatches = await Promise.all(
+      products.map(async (product) => {
+        const batches = await db.prepare(`
+          SELECT * FROM stock_batches WHERE product_id = $1 ORDER BY purchase_date ASC
+        `).all(product.id);
 
-      const stockHistory = db.prepare(`
-        SELECT * FROM stock_history WHERE product_id = ? ORDER BY date DESC
-      `).all(product.id);
+        const stockHistory = await db.prepare(`
+          SELECT * FROM stock_history WHERE product_id = $1 ORDER BY date DESC
+        `).all(product.id);
 
-      return {
-        ...product,
-        batches: batches.map(batch => ({
-          id: batch.id,
-          purchaseDate: batch.purchase_date,
-          quantity: batch.quantity,
-          remainingQuantity: batch.remaining_quantity,
-          purchasePrice: batch.purchase_price,
-        })),
-        stockHistory: stockHistory.map(history => ({
-          id: history.id,
-          date: history.date,
-          quantity: history.quantity,
-          type: history.type,
-          batchId: history.batch_id,
-        })),
-      };
-    });
+        return {
+          ...product,
+          batches: batches.map(batch => ({
+            id: batch.id,
+            purchaseDate: batch.purchase_date,
+            quantity: batch.quantity,
+            remainingQuantity: batch.remaining_quantity,
+            purchasePrice: batch.purchase_price,
+          })),
+          stockHistory: stockHistory.map(history => ({
+            id: history.id,
+            date: history.date,
+            quantity: history.quantity,
+            type: history.type,
+            batchId: history.batch_id,
+          })),
+        };
+      })
+    );
 
     res.json(productsWithBatches);
   } catch (error) {
@@ -75,9 +77,9 @@ router.get('/', verifyToken, (req, res) => {
 });
 
 // Get single product
-router.get('/:id', verifyToken, (req, res) => {
+router.get('/:id', verifyToken, async (req, res) => {
   try {
-    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
+    const product = await db.prepare('SELECT * FROM products WHERE id = $1').get(req.params.id);
     
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
@@ -88,12 +90,12 @@ router.get('/:id', verifyToken, (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const batches = db.prepare(`
-      SELECT * FROM stock_batches WHERE product_id = ? ORDER BY purchase_date ASC
+    const batches = await db.prepare(`
+      SELECT * FROM stock_batches WHERE product_id = $1 ORDER BY purchase_date ASC
     `).all(product.id);
 
-    const stockHistory = db.prepare(`
-      SELECT * FROM stock_history WHERE product_id = ? ORDER BY date DESC
+    const stockHistory = await db.prepare(`
+      SELECT * FROM stock_history WHERE product_id = $1 ORDER BY date DESC
     `).all(product.id);
 
     res.json({
@@ -120,7 +122,7 @@ router.get('/:id', verifyToken, (req, res) => {
 });
 
 // Create product
-router.post('/', verifyToken, (req, res) => {
+router.post('/', verifyToken, async (req, res) => {
   try {
     const { name, category, quantity, price, batches, stockHistory, businessId } = req.body;
     
@@ -138,50 +140,34 @@ router.post('/', verifyToken, (req, res) => {
       return res.status(400).json({ error: 'Business context required' });
     }
 
-    const id = Date.now().toString();
     const now = new Date().toISOString();
 
-    // Insert product
-    db.prepare(`
-      INSERT INTO products (id, name, category, price, quantity, business_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, name, category || null, price, quantity || 0, targetBusinessId, now, now);
+    // Insert product (PostgreSQL will generate UUID)
+    const productResult = await db.prepare(`
+      INSERT INTO products (name, category, price, quantity, business_id, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING id
+    `).get(name, category || null, price, quantity || 0, targetBusinessId, now, now);
+    
+    const id = productResult.id;
 
     // Insert batches if provided
     if (batches && batches.length > 0) {
-      const insertBatch = db.prepare(`
-        INSERT INTO stock_batches (id, product_id, purchase_date, quantity, remaining_quantity, purchase_price)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `);
-
       for (const batch of batches) {
-        insertBatch.run(
-          batch.id,
-          id,
-          batch.purchaseDate,
-          batch.quantity,
-          batch.remainingQuantity,
-          batch.purchasePrice
-        );
+        await db.prepare(`
+          INSERT INTO stock_batches (product_id, purchase_date, quantity, remaining_quantity, purchase_price)
+          VALUES ($1, $2, $3, $4, $5)
+        `).run(id, batch.purchaseDate, batch.quantity, batch.remainingQuantity, batch.purchasePrice);
       }
     }
 
     // Insert stock history if provided
     if (stockHistory && stockHistory.length > 0) {
-      const insertHistory = db.prepare(`
-        INSERT INTO stock_history (id, product_id, batch_id, date, quantity, type)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `);
-
       for (const history of stockHistory) {
-        insertHistory.run(
-          history.id,
-          id,
-          history.batchId || null,
-          history.date,
-          history.quantity,
-          history.type
-        );
+        await db.prepare(`
+          INSERT INTO stock_history (product_id, batch_id, date, quantity, type)
+          VALUES ($1, $2, $3, $4, $5)
+        `).run(id, history.batchId || null, history.date, history.quantity, history.type);
       }
     }
 
@@ -193,10 +179,10 @@ router.post('/', verifyToken, (req, res) => {
 });
 
 // Update product
-router.put('/:id', verifyToken, (req, res) => {
+router.put('/:id', verifyToken, async (req, res) => {
   try {
     // Check product exists and user has access
-    const product = db.prepare('SELECT business_id FROM products WHERE id = ?').get(req.params.id);
+    const product = await db.prepare('SELECT business_id FROM products WHERE id = $1').get(req.params.id);
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
@@ -209,10 +195,10 @@ router.put('/:id', verifyToken, (req, res) => {
     const { name, category, price } = req.body;
     const now = new Date().toISOString();
 
-    const result = db.prepare(`
+    const result = await db.prepare(`
       UPDATE products 
-      SET name = ?, category = ?, price = ?, updated_at = ?
-      WHERE id = ?
+      SET name = $1, category = $2, price = $3, updated_at = $4
+      WHERE id = $5
     `).run(name, category || null, price, now, req.params.id);
 
     if (result.changes === 0) {
@@ -227,10 +213,10 @@ router.put('/:id', verifyToken, (req, res) => {
 });
 
 // Delete product
-router.delete('/:id', verifyToken, (req, res) => {
+router.delete('/:id', verifyToken, async (req, res) => {
   try {
     // Check product exists and user has access
-    const product = db.prepare('SELECT business_id FROM products WHERE id = ?').get(req.params.id);
+    const product = await db.prepare('SELECT business_id FROM products WHERE id = $1').get(req.params.id);
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
@@ -240,7 +226,7 @@ router.delete('/:id', verifyToken, (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const result = db.prepare('DELETE FROM products WHERE id = ?').run(req.params.id);
+    const result = await db.prepare('DELETE FROM products WHERE id = $1').run(req.params.id);
 
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Product not found' });
@@ -254,10 +240,10 @@ router.delete('/:id', verifyToken, (req, res) => {
 });
 
 // Add stock to product
-router.post('/:id/stock', verifyToken, (req, res) => {
+router.post('/:id/stock', verifyToken, async (req, res) => {
   try {
     // Check product exists and user has access
-    const product = db.prepare('SELECT business_id FROM products WHERE id = ?').get(req.params.id);
+    const product = await db.prepare('SELECT business_id FROM products WHERE id = $1').get(req.params.id);
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
@@ -275,32 +261,33 @@ router.post('/:id/stock', verifyToken, (req, res) => {
 
     if (batchId) {
       // Add to existing batch
-      db.prepare(`
+      await db.prepare(`
         UPDATE stock_batches 
-        SET quantity = quantity + ?, remaining_quantity = remaining_quantity + ?
-        WHERE id = ?
+        SET quantity = quantity + $1, remaining_quantity = remaining_quantity + $2
+        WHERE id = $3
       `).run(quantity, quantity, batchId);
+      batchIdToUse = batchId;
     } else {
-      // Create new batch
-      batchIdToUse = `batch-${Date.now()}-${Math.random()}`;
-      db.prepare(`
-        INSERT INTO stock_batches (id, product_id, purchase_date, quantity, remaining_quantity, purchase_price)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(batchIdToUse, productId, purchaseDate || new Date().toISOString().split('T')[0], quantity, quantity, purchasePrice);
+      // Create new batch (PostgreSQL will generate UUID)
+      const batchResult = await db.prepare(`
+        INSERT INTO stock_batches (product_id, purchase_date, quantity, remaining_quantity, purchase_price)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id
+      `).run(productId, purchaseDate || new Date().toISOString().split('T')[0], quantity, quantity, purchasePrice);
+      batchIdToUse = batchResult.id;
     }
 
     // Add stock history
-    const historyId = `history-${Date.now()}`;
-    db.prepare(`
-      INSERT INTO stock_history (id, product_id, batch_id, date, quantity, type)
-      VALUES (?, ?, ?, ?, ?, 'added')
-    `).run(historyId, productId, batchIdToUse, now, quantity);
+    await db.prepare(`
+      INSERT INTO stock_history (product_id, batch_id, date, quantity, type)
+      VALUES ($1, $2, $3, $4, 'added')
+    `).run(productId, batchIdToUse, now, quantity);
 
     // Update product quantity
-    const batches = db.prepare('SELECT remaining_quantity FROM stock_batches WHERE product_id = ?').all(productId);
-    const newQuantity = batches.reduce((sum, b) => sum + b.remaining_quantity, 0);
+    const batches = await db.prepare('SELECT remaining_quantity FROM stock_batches WHERE product_id = $1').all(productId);
+    const newQuantity = batches.reduce((sum, b) => sum + parseInt(b.remaining_quantity), 0);
     
-    db.prepare('UPDATE products SET quantity = ?, updated_at = ? WHERE id = ?')
+    await db.prepare('UPDATE products SET quantity = $1, updated_at = $2 WHERE id = $3')
       .run(newQuantity, now, productId);
 
     res.json({ message: 'Stock added successfully', batchId: batchIdToUse });

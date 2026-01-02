@@ -80,8 +80,7 @@ app.get('/api/health', (req, res) => {
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 NovaGadget API server running on http://localhost:${PORT}`);
-  console.log(`📊 Database: SQLite`);
-  // Database path removed from logs for security
+  console.log(`📊 Database: ${process.env.DATABASE_URL ? 'PostgreSQL' : 'SQLite (fallback)'}`);
 }).on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
     console.error(`❌ Error: Port ${PORT} is already in use.`);

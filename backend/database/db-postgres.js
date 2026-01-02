@@ -1,0 +1,191 @@
+import pkg from 'pg';
+const { Pool } = pkg;
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Create connection pool
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  max: 20, // Maximum number of clients in the pool
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
+});
+
+// Test connection
+pool.on('connect', () => {
+  console.log('✅ Connected to PostgreSQL database');
+});
+
+pool.on('error', (err) => {
+  console.error('❌ Unexpected error on idle PostgreSQL client', err);
+  process.exit(-1);
+});
+
+// Initialize database schema
+async function initializeDatabase() {
+  try {
+    // Check if DATABASE_URL is set
+    if (!process.env.DATABASE_URL) {
+      console.log('⚠️  DATABASE_URL not set - using SQLite fallback or local PostgreSQL');
+      // In development, you might want to use local PostgreSQL
+      // For now, we'll just log a warning
+    }
+
+    const schemaPath = join(__dirname, 'schema-postgres.sql');
+    const schema = readFileSync(schemaPath, 'utf8');
+    
+    // Execute schema (split by semicolons and execute each statement)
+    const statements = schema
+      .split(';')
+      .map(s => s.trim())
+      .filter(s => s.length > 0 && !s.startsWith('--'));
+
+    for (const statement of statements) {
+      try {
+        if (statement.trim()) {
+          await pool.query(statement);
+        }
+      } catch (error) {
+        // Ignore "already exists" errors
+        if (!error.message.includes('already exists') && 
+            !error.message.includes('duplicate') &&
+            !error.message.includes('relation') &&
+            !error.message.includes('constraint')) {
+          console.warn(`⚠️  Schema statement warning: ${error.message.substring(0, 100)}`);
+        }
+      }
+    }
+    
+    console.log('✅ PostgreSQL schema initialized');
+  } catch (error) {
+    console.error('❌ Error initializing PostgreSQL database:', error.message);
+    // Don't throw - allow server to start even if schema has minor issues
+    console.error('⚠️  Continuing despite schema errors - some features may not work');
+  }
+}
+
+// Initialize on first load (but don't block)
+initializeDatabase().catch(err => {
+  console.error('❌ Fatal error initializing database:', err.message);
+  // Don't exit - let the server start and handle errors gracefully
+});
+
+// Helper functions to match better-sqlite3 API for easier migration
+const db = {
+  // Prepare a query (returns a statement-like object)
+  prepare: (query) => {
+    // Convert SQLite ? placeholders to PostgreSQL $1, $2, etc.
+    let paramIndex = 1;
+    const pgQuery = query.replace(/\?/g, () => `$${paramIndex++}`);
+    
+    return {
+      // Execute query with parameters and return first row
+      get: async (...params) => {
+        try {
+          const result = await pool.query(pgQuery, params);
+          return result.rows[0] || null;
+        } catch (error) {
+          console.error('Database query error (get):', error.message);
+          throw error;
+        }
+      },
+      // Execute query with parameters and return all rows
+      all: async (...params) => {
+        try {
+          const result = await pool.query(pgQuery, params);
+          return result.rows;
+        } catch (error) {
+          console.error('Database query error (all):', error.message);
+          throw error;
+        }
+      },
+      // Execute query with parameters (for INSERT/UPDATE/DELETE)
+      run: async (...params) => {
+        try {
+          const result = await pool.query(pgQuery, params);
+          return {
+            changes: result.rowCount || 0,
+            lastInsertRowid: null // PostgreSQL doesn't have this concept
+          };
+        } catch (error) {
+          console.error('Database query error (run):', error.message);
+          throw error;
+        }
+      }
+    };
+  },
+  
+  // Execute raw SQL (for migrations, etc.)
+  exec: async (sql) => {
+    try {
+      await pool.query(sql);
+    } catch (error) {
+      console.error('Database exec error:', error.message);
+      throw error;
+    }
+  },
+  
+  // Transaction support
+  transaction: (callback) => {
+    return async (...args) => {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        
+        // Create a transaction-aware db object
+        const txDb = {
+          prepare: (query) => {
+            let paramIndex = 1;
+            const pgQuery = query.replace(/\?/g, () => `$${paramIndex++}`);
+            return {
+              get: async (...params) => {
+                const result = await client.query(pgQuery, params);
+                return result.rows[0] || null;
+              },
+              all: async (...params) => {
+                const result = await client.query(pgQuery, params);
+                return result.rows;
+              },
+              run: async (...params) => {
+                const result = await client.query(pgQuery, params);
+                return {
+                  changes: result.rowCount || 0,
+                  lastInsertRowid: null
+                };
+              }
+            };
+          },
+          exec: async (sql) => {
+            await client.query(sql);
+          }
+        };
+        
+        const result = await callback(txDb, ...args);
+        await client.query('COMMIT');
+        return result;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    };
+  },
+  
+  // Direct pool access for complex queries
+  query: pool.query.bind(pool),
+  pool: pool,
+  
+  // Close connection pool (for cleanup)
+  close: async () => {
+    await pool.end();
+  }
+};
+
+export default db;
+

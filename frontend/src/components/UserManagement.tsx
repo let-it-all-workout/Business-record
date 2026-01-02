@@ -5,11 +5,6 @@ import { User, UserRole } from '../types';
 // Get API base URL (same logic as api.ts)
 const rawApiUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
 const API_BASE_URL = rawApiUrl.endsWith('/') ? rawApiUrl.slice(0, -1) : rawApiUrl;
-// #region agent log
-const apiUrlData = {rawApiUrl,API_BASE_URL,hasViteApiUrl:!!import.meta.env.VITE_API_URL,isDev:import.meta.env.DEV};
-console.log('[DEBUG] API_BASE_URL initialized:', apiUrlData);
-fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'UserManagement.tsx:7',message:'API_BASE_URL initialized',data:apiUrlData,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-// #endregion
 
 export default function UserManagement() {
   const { user: currentUser, hasPermission } = useAuth();
@@ -90,14 +85,8 @@ export default function UserManagement() {
     e.preventDefault();
     e.stopPropagation();
     setError('');
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'UserManagement.tsx:84',message:'handleSubmit called',data:{editingUser:!!editingUser,formData},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     try {
       const token = localStorage.getItem('auth_token');
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'UserManagement.tsx:90',message:'Token check',data:{hasToken:!!token,tokenLength:token?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
       
       if (editingUser) {
         // Update user
@@ -125,11 +114,7 @@ export default function UserManagement() {
         }
       } else {
         // Create user within existing business (use /auth/users endpoint, not /auth/register)
-        const createUserUrl = `${API_BASE_URL}/auth/users`;
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'UserManagement.tsx:117',message:'Creating user - before fetch',data:{url:createUserUrl,API_BASE_URL,formData},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
-        const response = await fetch(createUserUrl, {
+        const response = await fetch(`${API_BASE_URL}/auth/users`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -137,9 +122,6 @@ export default function UserManagement() {
           },
           body: JSON.stringify(formData),
         });
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'UserManagement.tsx:125',message:'Create user response received',data:{status:response.status,ok:response.ok,statusText:response.statusText,url:response.url},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
 
         if (response.ok) {
           await loadUsers();
@@ -148,19 +130,11 @@ export default function UserManagement() {
           setTimeout(() => setSuccessMessage(''), 3000);
         } else {
           const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
-          // #region agent log
-          fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'UserManagement.tsx:132',message:'Create user error response',data:{status:response.status,errorData},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-          // #endregion
           setError(errorData.error || `Failed to create user: ${response.status}`);
         }
       }
     } catch (error) {
       console.error('Error saving user:', error);
-      // #region agent log
-      const errorData = {errorType:error?.constructor?.name,errorMessage:error instanceof Error?error.message:String(error),isTypeError:error instanceof TypeError,isFetchError:error instanceof TypeError&&(error.message.includes('fetch')||error.message.includes('Failed to fetch'))};
-      console.log('[DEBUG] Create user exception:', errorData);
-      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'UserManagement.tsx:136',message:'Create user exception caught',data:errorData,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
       if (error instanceof TypeError && (error.message.includes('fetch') || error.message.includes('Failed to fetch'))) {
         setError(`Network error: Cannot connect to API server at ${API_BASE_URL}. Please check your VITE_API_URL environment variable and ensure the backend is running.`);
       } else {

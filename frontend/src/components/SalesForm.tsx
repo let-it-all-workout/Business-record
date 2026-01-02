@@ -8,10 +8,6 @@ interface SalesFormProps {
 }
 
 export default function SalesForm({ products, onSubmit, onCancel }: SalesFormProps) {
-  // #region agent log
-  console.log('[DEBUG] SalesForm component mounted:', {productsCount:products.length,products:products.map(p=>({id:p.id,name:p.name,quantity:p.quantity}))});
-  fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SalesForm.tsx:10',message:'SalesForm mounted',data:{productsCount:products.length,products:products.map(p=>({id:p.id,name:p.name,quantity:p.quantity}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-  // #endregion
   const [selectedProductId, setSelectedProductId] = useState('');
   const [quantity, setQuantity] = useState('');
   const [sellingPrice, setSellingPrice] = useState('');
@@ -21,11 +17,6 @@ export default function SalesForm({ products, onSubmit, onCancel }: SalesFormPro
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // #region agent log
-    const submitData = {selectedProductId,quantity,sellingPrice,hasSelectedProduct:!!selectedProduct};
-    console.log('[DEBUG] SalesForm handleSubmit called:', submitData);
-    fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SalesForm.tsx:18',message:'SalesForm handleSubmit called',data:submitData,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-    // #endregion
     const quantityNum = parseInt(quantity, 10);
     const priceNum = parseFloat(sellingPrice);
 
@@ -48,11 +39,7 @@ export default function SalesForm({ products, onSubmit, onCancel }: SalesFormPro
       alert('Please enter a valid selling price (0 or greater)');
       return;
     }
-    // #region agent log
-    const onSubmitData = {productId:selectedProductId,quantity:quantityNum,price:priceNum};
-    console.log('[DEBUG] SalesForm calling onSubmit:', onSubmitData);
-    fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SalesForm.tsx:43',message:'SalesForm calling onSubmit',data:onSubmitData,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-    // #endregion
+
     onSubmit(selectedProductId, quantityNum, priceNum);
   };
 

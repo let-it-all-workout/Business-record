@@ -116,7 +116,7 @@ export default function GoodsInventorySection({ inventory, onUpdate, onDelete, o
     
     // Validate stock availability
     if (quantity > sellingGood.remainingQuantity) {
-      alert(`SALE-002: Insufficient stock! Only ${sellingGood.remainingQuantity} units available.`);
+      alert(`Insufficient stock! Only ${sellingGood.remainingQuantity} units available.`);
       return;
     }
     
@@ -429,15 +429,15 @@ export default function GoodsInventorySection({ inventory, onUpdate, onDelete, o
                 setPendingAction(null);
               }
             } else {
-              const error = await response.json().catch(() => ({ error: 'AUTH-005: PIN verification failed' }));
-              setPinError(error.error || 'AUTH-005: PIN verification failed');
+              const error = await response.json().catch(() => ({ error: 'Invalid PIN' }));
+              setPinError(error.error || 'Invalid PIN');
             }
           } catch (error) {
             console.error('PIN verification error:', error);
             if (error instanceof TypeError && error.message.includes('fetch')) {
-              setPinError('NET-001: Error: try again later');
+              setPinError('Network error: Cannot connect to server. Please check your connection.');
             } else {
-              setPinError('AUTH-005: PIN verification failed');
+              setPinError('Failed to verify PIN. Please try again.');
             }
           }
         }}

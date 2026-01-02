@@ -99,7 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           throw new Error('Health check failed');
         }
       } catch (healthError) {
-        throw new Error('AUTH-001: Error: try again later');
+        throw new Error('Error: try again later');
       }
       
       const response = await fetch(loginUrl, {
@@ -112,20 +112,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        throw new Error('AUTH-001: Error: try again later');
+        throw new Error('Error: try again later');
       }
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'AUTH-003: Login failed' }));
-        const errorMsg = error.error || 'AUTH-003: Login failed';
-        // If error doesn't have a code, add one based on status
-        if (!errorMsg.includes('AUTH-') && !errorMsg.includes('NET-')) {
-          if (response.status === 401) {
-            throw new Error('AUTH-002: Invalid credentials');
-          } else if (response.status >= 500) {
-            throw new Error('AUTH-001: Error: try again later');
-          }
-        }
+        const error = await response.json().catch(() => ({ error: 'Login failed' }));
+        const errorMsg = error.error || 'Login failed';
         throw new Error(errorMsg);
       }
 

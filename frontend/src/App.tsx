@@ -207,13 +207,9 @@ function App() {
         console.log('All data loaded successfully!');
       } catch (error) {
         console.error('Error loading data:', error);
-        let errorMessage = error instanceof Error ? error.message : 'DATA-001: Error: try again later';
-        if (error instanceof TypeError && (error.message.includes('fetch') || error.message.includes('Failed to fetch'))) {
-          errorMessage = 'DATA-001: Error: try again later';
-        } else if (!errorMessage.includes('DATA-') && !errorMessage.includes('NET-')) {
-          errorMessage = 'DATA-001: Error: try again later';
-        }
-        setLoadError(`Error: ${errorMessage}`);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to load data';
+        const apiUrl = import.meta.env.VITE_API_URL || 'backend server';
+        setLoadError(`Error: ${errorMessage}\n\nPlease check your VITE_API_URL environment variable (currently: ${apiUrl}) and ensure the backend is running.`);
       } finally {
         setIsLoading(false);
       }
@@ -448,7 +444,7 @@ function App() {
     if (!product) return;
 
     if (quantity > product.quantity) {
-      alert(`SALE-002: Insufficient stock! Only ${product.quantity} available.`);
+      alert(`Insufficient stock! Only ${product.quantity} available.`);
       return;
     }
 
@@ -507,12 +503,7 @@ function App() {
       setSuccessMessage(`Sale recorded successfully! ${quantity} units of ${product.name} sold for $${(quantity * sellingPrice).toFixed(2)} (Profit: $${profit.toFixed(2)})`);
     } catch (error) {
       console.error('Error recording sale:', error);
-      let errorMessage = error instanceof Error ? error.message : 'SALE-001: Failed to record sale';
-      if (error instanceof TypeError && (error.message.includes('fetch') || error.message.includes('Failed to fetch'))) {
-        errorMessage = 'NET-001: Error: try again later';
-      } else if (!errorMessage.includes('SALE-') && !errorMessage.includes('NET-')) {
-        errorMessage = 'SALE-001: Failed to record sale';
-      }
+      const errorMessage = error instanceof Error ? error.message : 'Failed to record sale';
       alert(`Error: ${errorMessage}\n\nPlease ensure the server is running and the database is accessible.`);
     }
   };
@@ -1747,15 +1738,15 @@ function App() {
                   setPendingAction(null);
                 }
               } else {
-                const error = await response.json().catch(() => ({ error: 'AUTH-005: PIN verification failed' }));
-                setPinError(error.error || 'AUTH-005: PIN verification failed');
+                const error = await response.json().catch(() => ({ error: 'Invalid PIN' }));
+                setPinError(error.error || 'Invalid PIN');
               }
             } catch (error) {
               console.error('PIN verification error:', error);
               if (error instanceof TypeError && error.message.includes('fetch')) {
-                setPinError('NET-001: Error: try again later');
+                setPinError('Network error: Cannot connect to server. Please check your connection.');
               } else {
-                setPinError('AUTH-005: PIN verification failed');
+                setPinError('Failed to verify PIN. Please try again.');
               }
             }
           }}

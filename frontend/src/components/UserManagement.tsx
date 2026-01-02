@@ -71,14 +71,9 @@ export default function UserManagement() {
     } catch (error) {
       console.error('[UserManagement] Error loading users:', error);
       if (error instanceof TypeError && (error.message.includes('fetch') || error.message.includes('Failed to fetch'))) {
-        setError('NET-001: Error: try again later');
+        setError(`Network error: Cannot connect to API server at ${API_BASE_URL}. Please check your VITE_API_URL environment variable and ensure the backend is running.`);
       } else {
-        const errorMsg = error instanceof Error ? error.message : 'USER-003: Failed to load users';
-        if (!errorMsg.includes('USER-') && !errorMsg.includes('NET-')) {
-          setError('USER-003: Failed to load users');
-        } else {
-          setError(errorMsg);
-        }
+        setError(error instanceof Error ? error.message : 'Failed to load users');
       }
       setUsers([]);
     } finally {
@@ -135,48 +130,15 @@ export default function UserManagement() {
           setTimeout(() => setSuccessMessage(''), 3000);
         } else {
           const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
-          const backendErrorMsg = errorData.error || `Failed to ${editingUser ? 'update' : 'create'} user: ${response.status}`;
-          
-          // Add error code prefix while preserving descriptive message
-          // Normalize error message for comparison (case-insensitive)
-          const normalizedMsg = backendErrorMsg.toLowerCase();
-          let errorMsg = backendErrorMsg;
-          if (normalizedMsg.includes('password must contain') && 
-              (normalizedMsg.includes('uppercase') || normalizedMsg.includes('lowercase') || 
-               normalizedMsg.includes('special character') || normalizedMsg.includes('number'))) {
-            errorMsg = `AUTH-006: ${backendErrorMsg}`;
-          } else if (normalizedMsg.includes('password must be at least') || 
-                     (normalizedMsg.includes('password') && normalizedMsg.includes('6 characters'))) {
-            errorMsg = `USER-004: ${backendErrorMsg}`;
-          } else if (!backendErrorMsg.includes('USER-') && !backendErrorMsg.includes('NET-') && !backendErrorMsg.includes('AUTH-')) {
-            errorMsg = editingUser ? `USER-002: ${backendErrorMsg}` : `USER-001: ${backendErrorMsg}`;
-          }
-          setError(errorMsg);
+          setError(errorData.error || `Failed to create user: ${response.status}`);
         }
       }
     } catch (error) {
       console.error('Error saving user:', error);
       if (error instanceof TypeError && (error.message.includes('fetch') || error.message.includes('Failed to fetch'))) {
-        setError('NET-001: Error: try again later');
+        setError(`Network error: Cannot connect to API server at ${API_BASE_URL}. Please check your VITE_API_URL environment variable and ensure the backend is running.`);
       } else {
-        let errorMsg = error instanceof Error ? error.message : 'Failed to create user';
-        
-        // Add error code prefix while preserving descriptive message
-        // Normalize error message for comparison (case-insensitive)
-        const normalizedErrorMsg = errorMsg.toLowerCase();
-        if (normalizedErrorMsg.includes('password must contain') && 
-            (normalizedErrorMsg.includes('uppercase') || normalizedErrorMsg.includes('lowercase') || 
-             normalizedErrorMsg.includes('special character') || normalizedErrorMsg.includes('number'))) {
-          // Remove any existing error code prefix before adding AUTH-006
-          errorMsg = `AUTH-006: ${errorMsg.replace(/^(AUTH-006: |USER-001: |USER-002: )?/, '')}`;
-        } else if (normalizedErrorMsg.includes('password must be at least') || 
-                   (normalizedErrorMsg.includes('password') && normalizedErrorMsg.includes('6 characters'))) {
-          errorMsg = `USER-004: ${errorMsg.replace(/^(USER-004: |USER-001: |USER-002: )?/, '')}`;
-        } else if (!errorMsg.includes('USER-') && !errorMsg.includes('NET-') && !errorMsg.includes('AUTH-')) {
-          errorMsg = editingUser ? `USER-002: ${errorMsg}` : `USER-001: ${errorMsg}`;
-        }
-        
-        setError(errorMsg);
+        setError(error instanceof Error ? error.message : 'Failed to save user');
       }
     }
   };

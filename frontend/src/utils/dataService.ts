@@ -18,7 +18,8 @@ const ensureAPI = async () => {
     }
   } catch (error) {
     if (error instanceof TypeError && (error.message.includes('fetch') || error.message.includes('Failed to fetch'))) {
-      throw new Error('NET-001: Error: try again later');
+      const apiUrl = API_BASE_URL || 'backend server';
+      throw new Error(`Cannot connect to API server at ${apiUrl}. Please check your VITE_API_URL environment variable and ensure the backend is running.`);
     }
     throw error;
   }

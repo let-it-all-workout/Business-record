@@ -37,36 +37,13 @@ export default function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () 
 
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        throw new Error('AUTH-001: Error: try again later');
+        const apiUrl = API_BASE_URL || 'backend server';
+        throw new Error(`Cannot connect to API server at ${apiUrl}. Please check your VITE_API_URL environment variable and ensure the backend is running.`);
       }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Registration failed' }));
-        let backendErrorMsg = errorData.error || 'Registration failed';
-        
-        // Normalize error message for comparison (case-insensitive)
-        const normalizedMsg = backendErrorMsg.toLowerCase();
-        
-        // Add error code prefix while preserving the descriptive message
-        // Check for password format/complexity errors first
-        if (normalizedMsg.includes('password must contain') && 
-            (normalizedMsg.includes('uppercase') || normalizedMsg.includes('lowercase') || 
-             normalizedMsg.includes('special character') || normalizedMsg.includes('number'))) {
-          throw new Error(`AUTH-006: ${backendErrorMsg}`);
-        } else if (normalizedMsg.includes('password must be at least') || 
-                   normalizedMsg.includes('password') && normalizedMsg.includes('6 characters')) {
-          throw new Error(`USER-004: ${backendErrorMsg}`);
-        } else if (normalizedMsg.includes('invalid email') || normalizedMsg.includes('email format')) {
-          throw new Error(`AUTH-004: ${backendErrorMsg}`);
-        } else if (normalizedMsg.includes('already exists') || normalizedMsg.includes('duplicate') || 
-                   normalizedMsg.includes('username') && normalizedMsg.includes('taken')) {
-          throw new Error(`AUTH-004: ${backendErrorMsg}`);
-        } else if (!backendErrorMsg.includes('AUTH-') && !backendErrorMsg.includes('NET-') && !backendErrorMsg.includes('USER-')) {
-          throw new Error(`AUTH-004: ${backendErrorMsg}`);
-        } else {
-          // Already has error code, use as-is
-          throw new Error(backendErrorMsg);
-        }
+        throw new Error(errorData.error || 'Registration failed');
       }
 
       const data = await response.json();

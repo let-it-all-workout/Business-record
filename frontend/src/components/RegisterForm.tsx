@@ -24,22 +24,8 @@ export default function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () 
     setLoading(true);
 
     try {
-      // #region agent log
-      const debugData = {
-        apiBaseUrl: API_BASE_URL,
-        viteApiUrl: import.meta.env.VITE_API_URL,
-        formData: { ...formData, password: '***' }, // Don't log password
-        registerUrl: `${API_BASE_URL}/auth/register`
-      };
-      console.log('🔍 [DEBUG] RegisterForm submit:', debugData);
-      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RegisterForm.tsx:21',message:'Register form submit',data:debugData,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
-      
       // Register new user and business
       const registerUrl = `${API_BASE_URL}/auth/register`;
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RegisterForm.tsx:28',message:'Before fetch register request',data:{registerUrl:registerUrl,hasAllFields:!!(formData.username&&formData.email&&formData.password&&formData.fullName&&formData.businessName)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
       
       const response = await fetch(registerUrl, {
         method: 'POST',
@@ -49,46 +35,18 @@ export default function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () 
         body: JSON.stringify(formData),
       });
 
-      // #region agent log
-      const responseDebug = {
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok,
-        contentType: response.headers.get('content-type'),
-        url: response.url
-      };
-      console.log('🔍 [DEBUG] Register response:', responseDebug);
-      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RegisterForm.tsx:40',message:'After fetch register response',data:responseDebug,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
-
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
         const apiUrl = API_BASE_URL || 'backend server';
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RegisterForm.tsx:45',message:'Non-JSON response error',data:{contentType:contentType,apiUrl:apiUrl,status:response.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
         throw new Error(`Cannot connect to API server at ${apiUrl}. Please check your VITE_API_URL environment variable and ensure the backend is running.`);
       }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Registration failed' }));
-        // #region agent log
-        const errorDebug = {
-          status: response.status,
-          errorData: errorData,
-          errorMessage: errorData.error || 'Registration failed'
-        };
-        console.error('🔍 [DEBUG] Register error response:', errorDebug);
-        fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RegisterForm.tsx:52',message:'Registration failed - response not OK',data:errorDebug,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-        // #endregion
         throw new Error(errorData.error || 'Registration failed');
       }
 
       const data = await response.json();
-      // #region agent log
-      console.log('🔍 [DEBUG] Registration successful:', { hasUser: !!data.user, hasToken: !!data.token });
-      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RegisterForm.tsx:60',message:'Registration successful, attempting auto-login',data:{hasUser:!!data.user,hasToken:!!data.token},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-      // #endregion
       
       // Auto-login after successful registration
       await login({
@@ -97,15 +55,9 @@ export default function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () 
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Registration failed';
-      // #region agent log
-      const errorDebug = {
-        errorMessage: errorMessage,
-        errorType: err?.constructor?.name,
-        errorStack: err instanceof Error ? err.stack : undefined
-      };
-      console.error('🔍 [DEBUG] RegisterForm catch error:', errorDebug);
-      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RegisterForm.tsx:68',message:'RegisterForm catch block',data:errorDebug,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
-      // #endregion
+      if (import.meta.env.DEV) {
+        console.error('Registration error:', err);
+      }
       setError(errorMessage);
     } finally {
       setLoading(false);

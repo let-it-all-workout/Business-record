@@ -14,20 +14,9 @@ export default function LoginForm({ onSwitchToRegister }: { onSwitchToRegister?:
     setLoading(true);
 
     try {
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LoginForm.tsx:17',message:'Calling login function',data:{hasUsername:!!username},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
-      // #endregion
       await login({ username, password });
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LoginForm.tsx:20',message:'Login succeeded',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
-      // #endregion
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Login failed';
-      const debugErrorData = {errorMessage:errorMessage,containsPort3002:errorMessage.includes('3002'),errorType:err?.constructor?.name};
-      console.error('🔍 [DEBUG] LoginForm error:', debugErrorData);
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LoginForm.tsx:23',message:'LoginForm catch - setting error',data:debugErrorData,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
-      // #endregion
       setError(errorMessage);
     } finally {
       setLoading(false);
@@ -43,17 +32,9 @@ export default function LoginForm({ onSwitchToRegister }: { onSwitchToRegister?:
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Debug info - remove after fixing */}
-          <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg text-xs">
-            <strong>Debug Info:</strong><br/>
-            VITE_API_URL: {import.meta.env.VITE_API_URL || 'NOT SET'}<br/>
-            API_BASE_URL: {import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api')}<br/>
-            Mode: {import.meta.env.MODE}
-          </div>
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
               <strong>Error:</strong> {error}
-              <br/><small className="text-xs mt-1 block">Contains "3002": {error.includes('3002') ? 'YES ❌' : 'NO ✅'}</small>
             </div>
           )}
 

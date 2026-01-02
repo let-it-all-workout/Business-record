@@ -1,20 +1,14 @@
 import express from 'express';
 import db from '../database/db-postgres.js';
 import { verifyToken } from './auth.js';
+import { validateUUIDParam, validateUUID, validateNumeric, sanitizeString } from '../middleware/validation.js';
 
 const router = express.Router();
 
 // Helper to get business filter
 function getBusinessFilter(req) {
-  // Super admin can view any business via ?businessId query param, or all if no businessId
-  if (req.isSuperAdmin) {
-    return { 
-      businessId: req.query.businessId || null, 
-      isSuperAdmin: true 
-    };
-  }
   // Regular users only see their business
-  return { businessId: req.user.businessId, isSuperAdmin: false };
+  return { businessId: req.user.businessId };
 }
 
 // Get all sales
@@ -22,20 +16,16 @@ router.get('/', verifyToken, async (req, res) => {
   try {
     const filter = getBusinessFilter(req);
     
-    if (!filter.businessId && !filter.isSuperAdmin) {
+    if (!filter.businessId) {
       return res.status(403).json({ error: 'Business context required' });
     }
 
-    // For regular users, include data with NULL business_id (old data compatibility)
-    const query = filter.isSuperAdmin && filter.businessId
-      ? `SELECT * FROM sales WHERE (business_id = $1 OR business_id IS NULL) ORDER BY date DESC`
-      : filter.isSuperAdmin
-      ? `SELECT * FROM sales ORDER BY date DESC`
-      : `SELECT * FROM sales WHERE (business_id = $1 OR business_id IS NULL) ORDER BY date DESC`;
-    
-    const sales = filter.isSuperAdmin && !filter.businessId
-      ? await db.prepare(query).all()
-      : await db.prepare(query).all(filter.businessId);
+    // Include data with NULL business_id (old data compatibility)
+    const sales = await db.prepare(`
+      SELECT * FROM sales 
+      WHERE (business_id = $1 OR business_id IS NULL) 
+      ORDER BY date DESC
+    `).all(filter.businessId);
 
     // Get batch details and refund history for each sale (async)
     const salesWithDetails = await Promise.all(
@@ -86,7 +76,7 @@ router.get('/', verifyToken, async (req, res) => {
 });
 
 // Get single sale
-router.get('/:id', verifyToken, async (req, res) => {
+router.get('/:id', verifyToken, validateUUIDParam('id'), async (req, res) => {
   try {
     const sale = await db.prepare('SELECT * FROM sales WHERE id = $1').get(req.params.id);
     
@@ -94,20 +84,17 @@ router.get('/:id', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'Sale not found' });
     }
 
-    // Check business access
-    // Allow access if:
-    // 1. User is super admin, OR
-    // 2. Sale's business_id matches user's businessId, OR
-    // 3. Sale has NULL/empty business_id (old data) and user has a businessId (backward compatibility)
+    // Verify business access - always check against database
     const saleBusinessId = sale.business_id;
     const userBusinessId = req.user.businessId;
     const isOldData = !saleBusinessId || saleBusinessId === '' || saleBusinessId === 'null';
     
-    if (!req.isSuperAdmin) {
-      if (isOldData && userBusinessId) {
-        // Old data - allow access for backward compatibility
-        console.log(`[GET SALE] Allowing access to old data (NULL business_id) for user: ${req.user.id}`);
-      } else if (saleBusinessId !== userBusinessId) {
+    if (isOldData && userBusinessId) {
+      // Old data - allow access for backward compatibility
+    } else if (saleBusinessId !== userBusinessId) {
+      // Additional verification: check user's business_id in database
+      const userBusiness = await db.prepare('SELECT business_id FROM users WHERE id = $1').get(req.user.id);
+      if (!userBusiness || userBusiness.business_id !== userBusinessId || saleBusinessId !== userBusinessId) {
         return res.status(403).json({ error: 'Access denied. You do not have permission to view this sale.' });
       }
     }
@@ -156,7 +143,7 @@ router.get('/:id', verifyToken, async (req, res) => {
 // Create sale
 router.post('/', verifyToken, async (req, res) => {
   try {
-    const {
+    let {
       productId,
       productName,
       inventoryId,
@@ -169,14 +156,34 @@ router.post('/', verifyToken, async (req, res) => {
       batchDetails,
       businessId,
     } = req.body;
-
-    // Determine which business_id to use
-    let targetBusinessId = businessId;
-    if (req.isSuperAdmin && businessId) {
-      targetBusinessId = businessId;
-    } else {
-      targetBusinessId = req.user.businessId;
+    
+    // Validate and sanitize inputs
+    if (productId && !validateUUID(productId)) {
+      return res.status(400).json({ error: 'Invalid productId format' });
     }
+    if (inventoryId && !validateUUID(inventoryId)) {
+      return res.status(400).json({ error: 'Invalid inventoryId format' });
+    }
+    if (goodId && !validateUUID(goodId)) {
+      return res.status(400).json({ error: 'Invalid goodId format' });
+    }
+    productName = sanitizeString(productName, 200);
+    
+    if (!validateNumeric(quantity, 1)) {
+      return res.status(400).json({ error: 'Invalid quantity' });
+    }
+    if (!validateNumeric(sellingPrice, 0)) {
+      return res.status(400).json({ error: 'Invalid selling price' });
+    }
+    if (!validateNumeric(purchasePrice, 0)) {
+      return res.status(400).json({ error: 'Invalid purchase price' });
+    }
+    if (!validateNumeric(profit)) {
+      return res.status(400).json({ error: 'Invalid profit' });
+    }
+
+    // Use user's business_id
+    const targetBusinessId = req.user.businessId;
 
     if (!targetBusinessId) {
       return res.status(400).json({ error: 'Business context required' });
@@ -314,7 +321,7 @@ router.post('/', verifyToken, async (req, res) => {
 });
 
 // Update sale
-router.put('/:id', verifyToken, async (req, res) => {
+router.put('/:id', verifyToken, validateUUIDParam('id'), async (req, res) => {
   try {
     const saleId = req.params.id;
     
@@ -333,7 +340,7 @@ router.put('/:id', verifyToken, async (req, res) => {
     const userBusinessId = req.user.businessId;
     const isOldData = !saleBusinessId || saleBusinessId === '' || saleBusinessId === 'null';
     
-    if (!req.isSuperAdmin) {
+    {
       if (isOldData && userBusinessId) {
         // Old data - allow access for backward compatibility
         console.log(`[UPDATE SALE] Allowing access to old data (NULL business_id) for user: ${req.user.id}`);
@@ -488,7 +495,7 @@ router.put('/:id', verifyToken, async (req, res) => {
 });
 
 // Refund sale
-router.post('/:id/refund', verifyToken, async (req, res) => {
+router.post('/:id/refund', verifyToken, validateUUIDParam('id'), async (req, res) => {
   try {
     const saleId = req.params.id;
     
@@ -507,7 +514,7 @@ router.post('/:id/refund', verifyToken, async (req, res) => {
     const userBusinessId = req.user.businessId;
     const isOldData = !saleBusinessId || saleBusinessId === '' || saleBusinessId === 'null';
     
-    if (!req.isSuperAdmin) {
+    {
       if (isOldData && userBusinessId) {
         // Old data - allow access for backward compatibility
         console.log(`[REFUND] Allowing access to old data (NULL business_id) for user: ${req.user.id}`);

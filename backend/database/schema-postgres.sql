@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     full_name TEXT NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('super_admin', 'admin', 'manager', 'staff', 'viewer')),
+    role TEXT NOT NULL CHECK(role IN ('admin', 'manager', 'staff', 'viewer')),
     business_id UUID, -- NULL for super_admin, business_id for regular users
     is_active BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),

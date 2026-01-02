@@ -43,54 +43,31 @@ export default function SuperAdminPanel({
   const loadBusinesses = async () => {
     try {
       const token = localStorage.getItem('auth_token');
-      // #region agent log
       const loadUrl = `${API_BASE_URL}/auth/businesses`;
-      console.log('[SuperAdminPanel] Loading businesses from:', loadUrl);
-      console.log('[SuperAdminPanel] API_BASE_URL:', API_BASE_URL);
-      console.log('[SuperAdminPanel] VITE_API_URL:', import.meta.env.VITE_API_URL);
-      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SuperAdminPanel.tsx:42',message:'Loading businesses',data:{apiBaseUrl:API_BASE_URL,loadUrl,hasToken:!!token},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
-      // #endregion
       const response = await fetch(loadUrl, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
       });
-      // #region agent log
-      console.log('[SuperAdminPanel] Response status:', response.status, response.statusText);
-      console.log('[SuperAdminPanel] Response headers:', response.headers.get('content-type'));
-      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SuperAdminPanel.tsx:50',message:'Businesses response',data:{status:response.status,ok:response.ok,contentType:response.headers.get('content-type')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
-      // #endregion
 
       if (response.ok) {
         const contentType = response.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
           const data = await response.json();
-          // #region agent log
-          fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SuperAdminPanel.tsx:56',message:'Businesses loaded successfully',data:{count:data.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
-          // #endregion
           setBusinesses(data);
         } else {
-          // #region agent log
-          fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SuperAdminPanel.tsx:60',message:'Invalid content type',data:{contentType:response.headers.get('content-type')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'K'})}).catch(()=>{});
-          // #endregion
           setError('Invalid response from server');
         }
       } else {
-        // #region agent log
         const errorText = await response.text().catch(() => '');
-        console.error('[SuperAdminPanel] Load failed:', response.status, errorText);
-        fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SuperAdminPanel.tsx:65',message:'Businesses load failed',data:{status:response.status,statusText:response.statusText,errorText:errorText.substring(0,200)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'L'})}).catch(()=>{});
-        // #endregion
         setError(`Failed to load businesses: ${response.status} ${errorText.substring(0, 100)}`);
       }
     } catch (err) {
-      // #region agent log
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.error('[SuperAdminPanel] Error:', err);
-      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SuperAdminPanel.tsx:70',message:'Businesses load error',data:{errorMessage:errMsg,errorType:err?.constructor?.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'M'})}).catch(()=>{});
-      // #endregion
+      if (import.meta.env.DEV) {
+        console.error('[SuperAdminPanel] Error:', err);
+      }
       setError(`Error loading businesses: ${errMsg}`);
-      console.error(err);
     } finally {
       setLoading(false);
     }

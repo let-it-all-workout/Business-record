@@ -1,20 +1,14 @@
 import express from 'express';
 import db from '../database/db-postgres.js';
 import { verifyToken } from './auth.js';
+import { validateUUIDParam, validateUUID, validateNumeric, sanitizeString } from '../middleware/validation.js';
 
 const router = express.Router();
 
 // Helper to get business filter
 function getBusinessFilter(req) {
-  // Super admin can view any business via ?businessId query param, or all if no businessId
-  if (req.isSuperAdmin) {
-    return { 
-      businessId: req.query.businessId || null, 
-      isSuperAdmin: true 
-    };
-  }
   // Regular users only see their business
-  return { businessId: req.user.businessId, isSuperAdmin: false };
+  return { businessId: req.user.businessId };
 }
 
 // Get all goods inventories
@@ -22,20 +16,16 @@ router.get('/', verifyToken, async (req, res) => {
   try {
     const filter = getBusinessFilter(req);
     
-    if (!filter.businessId && !filter.isSuperAdmin) {
+    if (!filter.businessId) {
       return res.status(403).json({ error: 'Business context required' });
     }
 
-    // For regular users, include data with NULL business_id (old data compatibility)
-    const query = filter.isSuperAdmin && filter.businessId
-      ? `SELECT * FROM goods_inventories WHERE (business_id = $1 OR business_id IS NULL) ORDER BY created_at DESC`
-      : filter.isSuperAdmin
-      ? `SELECT * FROM goods_inventories ORDER BY created_at DESC`
-      : `SELECT * FROM goods_inventories WHERE (business_id = $1 OR business_id IS NULL) ORDER BY created_at DESC`;
-    
-    const inventories = filter.isSuperAdmin && !filter.businessId
-      ? await db.prepare(query).all()
-      : await db.prepare(query).all(filter.businessId);
+    // Include data with NULL business_id (old data compatibility)
+    const inventories = await db.prepare(`
+      SELECT * FROM goods_inventories 
+      WHERE (business_id = $1 OR business_id IS NULL) 
+      ORDER BY created_at DESC
+    `).all(filter.businessId);
 
     // Get goods for each inventory (async)
     const inventoriesWithGoods = await Promise.all(
@@ -69,7 +59,7 @@ router.get('/', verifyToken, async (req, res) => {
 });
 
 // Get single inventory
-router.get('/:id', verifyToken, async (req, res) => {
+router.get('/:id', verifyToken, validateUUIDParam('id'), async (req, res) => {
   try {
     const inventory = await db.prepare('SELECT * FROM goods_inventories WHERE id = $1').get(req.params.id);
     
@@ -78,7 +68,7 @@ router.get('/:id', verifyToken, async (req, res) => {
     }
 
     // Check business access
-    if (!req.isSuperAdmin && inventory.business_id !== req.user.businessId) {
+    if (inventory.business_id !== req.user.businessId) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -104,18 +94,45 @@ router.get('/:id', verifyToken, async (req, res) => {
 // Create goods inventory
 router.post('/', verifyToken, async (req, res) => {
   try {
-    const { name, date, goods, businessId } = req.body;
+    let { name, date, goods, businessId } = req.body;
     
-    // Determine which business_id to use
-    let targetBusinessId = businessId;
-    if (req.isSuperAdmin && businessId) {
-      targetBusinessId = businessId;
-    } else {
-      targetBusinessId = req.user.businessId;
+    // Validate and sanitize inputs
+    if (businessId && !validateUUID(businessId)) {
+      return res.status(400).json({ error: 'Invalid businessId format' });
     }
+    name = sanitizeString(name, 200);
+    
+    // Validate date format
+    if (!date || typeof date !== 'string') {
+      return res.status(400).json({ error: 'Invalid date format' });
+    }
+    
+    // Validate goods array
+    if (goods && Array.isArray(goods)) {
+      for (const good of goods) {
+        if (good.name && typeof good.name !== 'string') {
+          return res.status(400).json({ error: 'Invalid good name' });
+        }
+        if (!validateNumeric(good.quantity, 1)) {
+          return res.status(400).json({ error: 'Invalid good quantity' });
+        }
+        if (!validateNumeric(good.unitPrice, 0)) {
+          return res.status(400).json({ error: 'Invalid good unit price' });
+        }
+      }
+    }
+    
+    // Always use user's business_id (security: prevent business ID manipulation)
+    const targetBusinessId = req.user.businessId;
 
     if (!targetBusinessId) {
       return res.status(400).json({ error: 'Business context required' });
+    }
+    
+    // Verify business_id belongs to user (additional security check)
+    const userBusiness = await db.prepare('SELECT business_id FROM users WHERE id = $1').get(req.user.id);
+    if (!userBusiness || userBusiness.business_id !== targetBusinessId) {
+      return res.status(403).json({ error: 'Invalid business context' });
     }
 
     const now = new Date().toISOString();
@@ -147,7 +164,7 @@ router.post('/', verifyToken, async (req, res) => {
 });
 
 // Update goods inventory
-router.put('/:id', verifyToken, async (req, res) => {
+router.put('/:id', verifyToken, validateUUIDParam('id'), async (req, res) => {
   try {
     // Check inventory exists and user has access
     const inventory = await db.prepare('SELECT business_id FROM goods_inventories WHERE id = $1').get(req.params.id);
@@ -156,11 +173,34 @@ router.put('/:id', verifyToken, async (req, res) => {
     }
 
     // Check business access
-    if (!req.isSuperAdmin && inventory.business_id !== req.user.businessId) {
+    if (inventory.business_id !== req.user.businessId) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const { name, date, goods } = req.body;
+    let { name, date, goods } = req.body;
+    
+    // Validate and sanitize inputs
+    name = sanitizeString(name, 200);
+    
+    // Validate date format
+    if (!date || typeof date !== 'string') {
+      return res.status(400).json({ error: 'Invalid date format' });
+    }
+    
+    // Validate goods array
+    if (goods && Array.isArray(goods)) {
+      for (const good of goods) {
+        if (good.name && typeof good.name !== 'string') {
+          return res.status(400).json({ error: 'Invalid good name' });
+        }
+        if (!validateNumeric(good.quantity, 1)) {
+          return res.status(400).json({ error: 'Invalid good quantity' });
+        }
+        if (!validateNumeric(good.unitPrice, 0)) {
+          return res.status(400).json({ error: 'Invalid good unit price' });
+        }
+      }
+    }
     const now = new Date().toISOString();
 
     // Update inventory
@@ -194,7 +234,7 @@ router.put('/:id', verifyToken, async (req, res) => {
 });
 
 // Delete goods inventory
-router.delete('/:id', verifyToken, async (req, res) => {
+router.delete('/:id', verifyToken, validateUUIDParam('id'), async (req, res) => {
   try {
     // Check inventory exists and user has access
     const inventory = await db.prepare('SELECT business_id FROM goods_inventories WHERE id = $1').get(req.params.id);
@@ -203,7 +243,7 @@ router.delete('/:id', verifyToken, async (req, res) => {
     }
 
     // Check business access
-    if (!req.isSuperAdmin && inventory.business_id !== req.user.businessId) {
+    if (inventory.business_id !== req.user.businessId) {
       return res.status(403).json({ error: 'Access denied' });
     }
     const result = await db.prepare('DELETE FROM goods_inventories WHERE id = $1').run(req.params.id);

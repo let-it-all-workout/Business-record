@@ -1,6 +1,6 @@
 import express from 'express';
 import { fileURLToPath } from 'url';
-import { dirname, join, basename } from 'path';
+import { dirname, join, basename, resolve } from 'path';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'fs';
 import Database from 'better-sqlite3';
 import { verifyToken } from './auth.js';
@@ -18,16 +18,16 @@ if (!existsSync(backupDir)) {
   mkdirSync(backupDir, { recursive: true });
 }
 
-// Middleware to check if user is super admin
-const requireSuperAdmin = (req, res, next) => {
-  if (!req.isSuperAdmin) {
-    return res.status(403).json({ error: 'Super admin access required' });
+// Middleware to check if user is admin
+const requireAdmin = (req, res, next) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
   }
   next();
 };
 
-// Create backup (Super Admin Only)
-router.post('/', verifyToken, requireSuperAdmin, (req, res) => {
+// Create backup (Admin Only)
+router.post('/', verifyToken, requireAdmin, (req, res) => {
   try {
     if (!existsSync(dbPath)) {
       return res.status(404).json({ error: 'Database not found' });
@@ -36,7 +36,14 @@ router.post('/', verifyToken, requireSuperAdmin, (req, res) => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0] + '_' + 
                       new Date().toTimeString().split(' ')[0].replace(/:/g, '-');
     const backupFilename = `business-record_backup_${timestamp}.db`;
-    const backupPath = join(backupDir, backupFilename);
+    // Resolve path to prevent directory traversal
+    const backupPath = resolve(backupDir, backupFilename);
+    const resolvedBackupDir = resolve(backupDir);
+    
+    // Verify the resolved path is within backup directory
+    if (!backupPath.startsWith(resolvedBackupDir)) {
+      return res.status(400).json({ error: 'Invalid backup path' });
+    }
 
     copyFileSync(dbPath, backupPath);
     const stats = statSync(backupPath);
@@ -55,38 +62,32 @@ router.post('/', verifyToken, requireSuperAdmin, (req, res) => {
 
 // List backups - allows listing if database is empty (no auth needed), otherwise requires super admin
 router.get('/', async (req, res) => {
-  // #region agent log
-  fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backup.js:56',message:'List backups endpoint entry',data:{backupDir:backupDir,dirExists:existsSync(backupDir)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'P'})}).catch(()=>{});
-  // #endregion
-  console.log('[DEBUG] List backups endpoint called');
-  console.log('[DEBUG] Backup directory:', backupDir);
-  console.log('[DEBUG] Backup directory exists:', existsSync(backupDir));
   try {
     // Check if database is empty (no users)
     let databaseEmpty = false;
     try {
-      const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
+      const userCount = await db.prepare('SELECT COUNT(*) as count FROM users').get();
       databaseEmpty = userCount.count === 0;
-      console.log('[DEBUG] User count:', userCount.count, 'Database empty:', databaseEmpty);
     } catch (e) {
       // Database might not exist or table doesn't exist
       databaseEmpty = true;
-      console.log('[DEBUG] Database check error (assuming empty):', e.message);
     }
     
     // If database has users, require authentication
     if (!databaseEmpty) {
       // Try to verify token
       try {
-        const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token;
+        // Only accept token from Authorization header (security: no query string)
+        const token = req.headers.authorization?.replace(/^Bearer\s+/i, '') || 
+                      req.headers.Authorization?.replace(/^Bearer\s+/i, '');
         if (!token) {
           return res.status(401).json({ error: 'Authentication required when database has users' });
         }
         
         // Verify token (simplified check)
         const session = db.prepare('SELECT s.*, u.role FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = ?').get(token);
-        if (!session || session.role !== 'super_admin') {
-          return res.status(403).json({ error: 'Super admin access required' });
+        if (!session || session.role !== 'admin') {
+          return res.status(403).json({ error: 'Admin access required' });
         }
       } catch (authError) {
         return res.status(401).json({ error: 'Authentication failed' });
@@ -96,23 +97,31 @@ router.get('/', async (req, res) => {
     }
     
     // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backup.js:89',message:'Reading backup directory',data:{backupDir:backupDir,exists:existsSync(backupDir)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'Q'})}).catch(()=>{});
     // #endregion
     
     // Ensure backup directory exists
     if (!existsSync(backupDir)) {
-      console.log('[DEBUG] Backup directory does not exist, creating it');
       mkdirSync(backupDir, { recursive: true });
     }
     
-    console.log('[DEBUG] Reading files from:', backupDir);
     const allFiles = readdirSync(backupDir);
-    console.log('[DEBUG] All files in backup directory:', allFiles);
     
     const files = allFiles
       .filter(file => file.endsWith('.db'))
       .map(file => {
-        const filePath = join(backupDir, file);
+        // Sanitize and resolve path
+        const sanitizedFile = basename(file);
+        if (sanitizedFile !== file || !file.endsWith('.db')) {
+          return res.status(400).json({ error: 'Invalid filename format' });
+        }
+        
+        const filePath = resolve(backupDir, sanitizedFile);
+        const resolvedBackupDir = resolve(backupDir);
+        
+        // Verify the resolved path is within backup directory
+        if (!filePath.startsWith(resolvedBackupDir)) {
+          return res.status(400).json({ error: 'Invalid file path' });
+        }
         const stats = statSync(filePath);
         return {
           filename: file,
@@ -122,25 +131,17 @@ router.get('/', async (req, res) => {
       })
       .sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backup.js:102',message:'Backup files found',data:{totalFiles:allFiles.length,dbFiles:files.length,filenames:files.map(f=>f.filename)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'R'})}).catch(()=>{});
-    // #endregion
-    console.log('[DEBUG] Found backup files:', files.length);
-    console.log('[DEBUG] Backup files:', files.map(f => f.filename));
-
     res.json(files);
   } catch (error) {
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backup.js:105',message:'Error listing backups',data:{errorMessage:error.message,errorStack:error.stack},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'S'})}).catch(()=>{});
-    // #endregion
-    console.error('[DEBUG] Error listing backups:', error);
-    console.error('[DEBUG] Error stack:', error.stack);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Error listing backups:', error);
+    }
     res.status(500).json({ error: 'Failed to list backups', details: process.env.NODE_ENV !== 'production' ? error.message : undefined });
   }
 });
 
 // Download backup (Super Admin Only)
-router.get('/download', verifyToken, requireSuperAdmin, (req, res) => {
+router.get('/download', verifyToken, requireAdmin, (req, res) => {
   try {
     const { file } = req.query;
     if (!file) {
@@ -153,7 +154,15 @@ router.get('/download', verifyToken, requireSuperAdmin, (req, res) => {
       return res.status(400).json({ error: 'Invalid filename format' });
     }
 
-    const filePath = join(backupDir, sanitizedFile);
+    // Resolve paths to prevent directory traversal
+    const filePath = resolve(backupDir, sanitizedFile);
+    const resolvedBackupDir = resolve(backupDir);
+    
+    // Verify the resolved path is within backup directory
+    if (!filePath.startsWith(resolvedBackupDir)) {
+      return res.status(400).json({ error: 'Invalid file path' });
+    }
+    
     if (!existsSync(filePath)) {
       return res.status(404).json({ error: 'Backup not found' });
     }
@@ -187,15 +196,17 @@ router.post('/restore', async (req, res) => {
     if (!databaseEmpty) {
       // Try to verify token
       try {
-        const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token;
+        // Only accept token from Authorization header (security: no query string)
+        const token = req.headers.authorization?.replace(/^Bearer\s+/i, '') || 
+                      req.headers.Authorization?.replace(/^Bearer\s+/i, '');
         if (!token) {
           return res.status(401).json({ error: 'Authentication required when database has users' });
         }
         
         // Verify token (simplified check - just check if session exists)
         const session = db.prepare('SELECT s.*, u.role FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = ?').get(token);
-        if (!session || session.role !== 'super_admin') {
-          return res.status(403).json({ error: 'Super admin access required' });
+        if (!session || session.role !== 'admin') {
+          return res.status(403).json({ error: 'Admin access required' });
         }
       } catch (authError) {
         return res.status(401).json({ error: 'Authentication failed' });
@@ -216,13 +227,26 @@ router.post('/restore', async (req, res) => {
       return res.status(400).json({ error: 'Invalid filename format' });
     }
 
-    const backupPath = join(backupDir, sanitizedFile);
+    // Resolve paths to prevent directory traversal
+    const backupPath = resolve(backupDir, sanitizedFile);
+    const resolvedBackupDir = resolve(backupDir);
+    
+    // Verify the resolved path is within backup directory
+    if (!backupPath.startsWith(resolvedBackupDir)) {
+      return res.status(400).json({ error: 'Invalid file path' });
+    }
+    
     if (!existsSync(backupPath)) {
       return res.status(404).json({ error: 'Backup not found' });
     }
 
     // Create a backup of current database before restoring
-    const currentBackupPath = join(backupDir, `pre-restore_${Date.now()}.db`);
+    const currentBackupPath = resolve(backupDir, `pre-restore_${Date.now()}.db`);
+    
+    // Verify current backup path is within backup directory
+    if (!currentBackupPath.startsWith(resolvedBackupDir)) {
+      return res.status(400).json({ error: 'Invalid backup path' });
+    }
     if (existsSync(dbPath)) {
       copyFileSync(dbPath, currentBackupPath);
     }
@@ -362,14 +386,28 @@ router.post('/restore', async (req, res) => {
 });
 
 // Delete backup (Super Admin Only)
-router.delete('/', verifyToken, requireSuperAdmin, (req, res) => {
+router.delete('/', verifyToken, requireAdmin, (req, res) => {
   try {
     const { file } = req.query;
     if (!file) {
       return res.status(400).json({ error: 'Filename required' });
     }
 
-    const filePath = join(backupDir, file);
+    // Sanitize filename - prevent path traversal attacks
+    const sanitizedFile = basename(file);
+    if (sanitizedFile !== file || !file.endsWith('.db')) {
+      return res.status(400).json({ error: 'Invalid filename format' });
+    }
+
+    // Resolve paths to prevent directory traversal
+    const filePath = resolve(backupDir, sanitizedFile);
+    const resolvedBackupDir = resolve(backupDir);
+    
+    // Verify the resolved path is within backup directory
+    if (!filePath.startsWith(resolvedBackupDir)) {
+      return res.status(400).json({ error: 'Invalid file path' });
+    }
+    
     if (!existsSync(filePath)) {
       return res.status(404).json({ error: 'Backup not found' });
     }

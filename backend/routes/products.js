@@ -1,20 +1,14 @@
 import express from 'express';
 import db from '../database/db-postgres.js';
 import { verifyToken } from './auth.js';
+import { validateUUIDParam } from '../middleware/validation.js';
 
 const router = express.Router();
 
-// Helper to get business filter (for super_admin, allow viewing any business via query param)
+// Helper to get business filter
 function getBusinessFilter(req) {
-  // Super admin can view any business via ?businessId query param, or all if no businessId
-  if (req.isSuperAdmin) {
-    return { 
-      businessId: req.query.businessId || null, 
-      isSuperAdmin: true 
-    };
-  }
   // Regular users only see their business
-  return { businessId: req.user.businessId, isSuperAdmin: false };
+  return { businessId: req.user.businessId };
 }
 
 // Get all products
@@ -22,21 +16,16 @@ router.get('/', verifyToken, async (req, res) => {
   try {
     const filter = getBusinessFilter(req);
     
-    if (!filter.businessId && !filter.isSuperAdmin) {
+    if (!filter.businessId) {
       return res.status(403).json({ error: 'Business context required' });
     }
 
-    // For regular users, include data with NULL business_id (old data compatibility)
-    // For super admin selecting a business, also include NULL business_id (legacy data)
-    const query = filter.isSuperAdmin && filter.businessId
-      ? `SELECT * FROM products WHERE (business_id = $1 OR business_id IS NULL) ORDER BY created_at DESC`
-      : filter.isSuperAdmin
-      ? `SELECT * FROM products ORDER BY created_at DESC`
-      : `SELECT * FROM products WHERE (business_id = $1 OR business_id IS NULL) ORDER BY created_at DESC`;
-    
-    const products = filter.isSuperAdmin && !filter.businessId
-      ? await db.prepare(query).all()
-      : await db.prepare(query).all(filter.businessId);
+    // Include data with NULL business_id (old data compatibility)
+    const products = await db.prepare(`
+      SELECT * FROM products 
+      WHERE (business_id = $1 OR business_id IS NULL) 
+      ORDER BY created_at DESC
+    `).all(filter.businessId);
 
     // Get batches for each product (async)
     const productsWithBatches = await Promise.all(
@@ -77,7 +66,7 @@ router.get('/', verifyToken, async (req, res) => {
 });
 
 // Get single product
-router.get('/:id', verifyToken, async (req, res) => {
+router.get('/:id', verifyToken, validateUUIDParam('id'), async (req, res) => {
   try {
     const product = await db.prepare('SELECT * FROM products WHERE id = $1').get(req.params.id);
     
@@ -85,9 +74,13 @@ router.get('/:id', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    // Check business access (super admin can access any, regular users only their business)
-    if (!req.isSuperAdmin && product.business_id !== req.user.businessId) {
-      return res.status(403).json({ error: 'Access denied' });
+    // Verify business access - always check against database
+    if (!product.business_id || product.business_id !== req.user.businessId) {
+      // Additional verification: check user's business_id in database
+      const userBusiness = await db.prepare('SELECT business_id FROM users WHERE id = $1').get(req.user.id);
+      if (!userBusiness || userBusiness.business_id !== req.user.businessId || product.business_id !== req.user.businessId) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
     }
 
     const batches = await db.prepare(`
@@ -124,20 +117,33 @@ router.get('/:id', verifyToken, async (req, res) => {
 // Create product
 router.post('/', verifyToken, async (req, res) => {
   try {
-    const { name, category, quantity, price, batches, stockHistory, businessId } = req.body;
+    let { name, category, quantity, price, batches, stockHistory, businessId } = req.body;
     
-    // Determine which business_id to use
-    let targetBusinessId = businessId;
-    if (req.isSuperAdmin && businessId) {
-      // Super admin can create products for any business
-      targetBusinessId = businessId;
-    } else {
-      // Regular users create products for their own business
-      targetBusinessId = req.user.businessId;
+    // Validate and sanitize inputs
+    if (businessId && !validateUUID(businessId)) {
+      return res.status(400).json({ error: 'Invalid businessId format' });
     }
+    name = sanitizeString(name, 200);
+    category = category ? sanitizeString(category, 100) : null;
+    
+    if (!validateNumeric(price, 0)) {
+      return res.status(400).json({ error: 'Invalid price' });
+    }
+    if (!validateNumeric(quantity, 0)) {
+      return res.status(400).json({ error: 'Invalid quantity' });
+    }
+    
+    // Always use user's business_id (security: prevent business ID manipulation)
+    const targetBusinessId = req.user.businessId;
 
     if (!targetBusinessId) {
       return res.status(400).json({ error: 'Business context required' });
+    }
+    
+    // Verify business_id belongs to user (additional security check)
+    const userBusiness = await db.prepare('SELECT business_id FROM users WHERE id = $1').get(req.user.id);
+    if (!userBusiness || userBusiness.business_id !== targetBusinessId) {
+      return res.status(403).json({ error: 'Invalid business context' });
     }
 
     const now = new Date().toISOString();
@@ -179,7 +185,7 @@ router.post('/', verifyToken, async (req, res) => {
 });
 
 // Update product
-router.put('/:id', verifyToken, async (req, res) => {
+router.put('/:id', verifyToken, validateUUIDParam('id'), async (req, res) => {
   try {
     // Check product exists and user has access
     const product = await db.prepare('SELECT business_id FROM products WHERE id = $1').get(req.params.id);
@@ -188,11 +194,19 @@ router.put('/:id', verifyToken, async (req, res) => {
     }
 
     // Check business access
-    if (!req.isSuperAdmin && product.business_id !== req.user.businessId) {
+    if (product.business_id !== req.user.businessId) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const { name, category, price } = req.body;
+    let { name, category, price } = req.body;
+    
+    // Validate and sanitize inputs
+    name = sanitizeString(name, 200);
+    category = category ? sanitizeString(category, 100) : null;
+    
+    if (!validateNumeric(price, 0)) {
+      return res.status(400).json({ error: 'Invalid price' });
+    }
     const now = new Date().toISOString();
 
     const result = await db.prepare(`
@@ -213,7 +227,7 @@ router.put('/:id', verifyToken, async (req, res) => {
 });
 
 // Delete product
-router.delete('/:id', verifyToken, async (req, res) => {
+router.delete('/:id', verifyToken, validateUUIDParam('id'), async (req, res) => {
   try {
     // Check product exists and user has access
     const product = await db.prepare('SELECT business_id FROM products WHERE id = $1').get(req.params.id);
@@ -222,7 +236,7 @@ router.delete('/:id', verifyToken, async (req, res) => {
     }
 
     // Check business access
-    if (!req.isSuperAdmin && product.business_id !== req.user.businessId) {
+    if (product.business_id !== req.user.businessId) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -249,12 +263,23 @@ router.post('/:id/stock', verifyToken, async (req, res) => {
     }
 
     // Check business access
-    if (!req.isSuperAdmin && product.business_id !== req.user.businessId) {
+    if (product.business_id !== req.user.businessId) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const { quantity, purchasePrice, purchaseDate, batchId } = req.body;
+    let { quantity, purchasePrice, purchaseDate, batchId } = req.body;
     const productId = req.params.id;
+    
+    // Validate inputs
+    if (!validateNumeric(quantity, 1)) {
+      return res.status(400).json({ error: 'Invalid quantity' });
+    }
+    if (!validateNumeric(purchasePrice, 0)) {
+      return res.status(400).json({ error: 'Invalid purchase price' });
+    }
+    if (batchId && !validateUUID(batchId)) {
+      return res.status(400).json({ error: 'Invalid batchId format' });
+    }
     const now = new Date().toISOString();
 
     let batchIdToUse = batchId;

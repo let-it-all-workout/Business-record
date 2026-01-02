@@ -4,6 +4,7 @@ const { Pool } = pkg;
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
+import { readFileSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -21,7 +22,8 @@ if (!process.env.DATABASE_URL) {
 
 const pgPool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  // Always use SSL for Railway PostgreSQL (both internal and external)
+  ssl: { rejectUnauthorized: false },
 });
 
 // ID mapping: SQLite TEXT IDs -> PostgreSQL UUIDs
@@ -30,6 +32,7 @@ const idMap = {
   businesses: {},
   products: {},
   stock_batches: {},
+  stock_history: {},
   sales: {},
   goods_inventories: {},
   goods: {},
@@ -42,6 +45,10 @@ const idMap = {
 // Helper to generate or get mapped UUID
 function getMappedId(table, oldId) {
   if (!oldId) return null;
+  if (!idMap[table]) {
+    // Initialize table mapping if it doesn't exist
+    idMap[table] = {};
+  }
   if (!idMap[table][oldId]) {
     idMap[table][oldId] = randomUUID();
   }
@@ -51,32 +58,84 @@ function getMappedId(table, oldId) {
 async function migrateUsers() {
   console.log('📦 Migrating users...');
   const users = sqliteDb.prepare('SELECT * FROM users').all();
+  let inserted = 0;
+  let skipped = 0;
   
+  // First, insert users with business_id = NULL (to avoid foreign key constraint)
   for (const user of users) {
     const newId = getMappedId('users', user.id);
-    const businessId = user.business_id ? getMappedId('businesses', user.business_id) : null;
     
-    await pgPool.query(`
-      INSERT INTO users (id, username, email, password_hash, full_name, role, business_id, is_active, created_at, updated_at, last_login, pin_hash)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-      ON CONFLICT (id) DO NOTHING
-    `, [
-      newId,
-      user.username,
-      user.email,
-      user.password_hash,
-      user.full_name,
-      user.role,
-      businessId,
-      user.is_active === 1 || user.is_active === true,
-      user.created_at || new Date().toISOString(),
-      user.updated_at || new Date().toISOString(),
-      user.last_login || null,
-      user.pin_hash || null
-    ]);
+    // Check if user already exists by username or email
+    const existing = await pgPool.query(
+      'SELECT id FROM users WHERE username = $1 OR email = $2',
+      [user.username, user.email]
+    );
+    
+    if (existing.rows.length > 0) {
+      // User already exists, update the ID mapping to use existing ID
+      const existingId = existing.rows[0].id;
+      idMap.users[user.id] = existingId;
+      skipped++;
+      continue;
+    }
+    
+    try {
+      await pgPool.query(`
+        INSERT INTO users (id, username, email, password_hash, full_name, role, business_id, is_active, created_at, updated_at, last_login, pin_hash)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ON CONFLICT (username) DO NOTHING
+      `, [
+        newId,
+        user.username,
+        user.email,
+        user.password_hash,
+        user.full_name,
+        user.role,
+        null, // Set business_id to NULL initially
+        user.is_active === 1 || user.is_active === true,
+        user.created_at || new Date().toISOString(),
+        user.updated_at || new Date().toISOString(),
+        user.last_login || null,
+        user.pin_hash || null
+      ]);
+      inserted++;
+    } catch (err) {
+      // If still fails (email conflict or other unique violation), get existing user and update mapping
+      if (err.code === '23505') { // Unique violation
+        const existing = await pgPool.query(
+          'SELECT id FROM users WHERE username = $1 OR email = $2',
+          [user.username, user.email]
+        );
+        if (existing.rows.length > 0) {
+          idMap.users[user.id] = existing.rows[0].id;
+        }
+        skipped++;
+        console.log(`   ⚠️  Skipped user ${user.username} (already exists)`);
+      } else {
+        throw err;
+      }
+    }
   }
   
-  console.log(`✅ Migrated ${users.length} users`);
+  console.log(`✅ Migrated ${inserted} users, skipped ${skipped} existing users`);
+}
+
+async function updateUserBusinessIds() {
+  console.log('📦 Updating user business relationships...');
+  const users = sqliteDb.prepare('SELECT * FROM users WHERE business_id IS NOT NULL').all();
+  
+  for (const user of users) {
+    const userId = getMappedId('users', user.id);
+    const businessId = getMappedId('businesses', user.business_id);
+    
+    await pgPool.query(`
+      UPDATE users 
+      SET business_id = $1 
+      WHERE id = $2
+    `, [businessId, userId]);
+  }
+  
+  console.log(`✅ Updated ${users.length} user business relationships`);
 }
 
 async function migrateBusinesses() {
@@ -107,27 +166,65 @@ async function migrateProducts() {
   console.log('📦 Migrating products...');
   const products = sqliteDb.prepare('SELECT * FROM products').all();
   
-  for (const product of products) {
-    const newId = getMappedId('products', product.id);
-    const businessId = getMappedId('businesses', product.business_id);
-    
-    await pgPool.query(`
-      INSERT INTO products (id, name, category, price, quantity, business_id, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      ON CONFLICT (id) DO NOTHING
-    `, [
-      newId,
-      product.name,
-      product.category || null,
-      product.price,
-      product.quantity || 0,
-      businessId,
-      product.created_at || new Date().toISOString(),
-      product.updated_at || new Date().toISOString()
-    ]);
+  // Get the first business ID as fallback (in case product has no business_id)
+  let defaultBusinessId = null;
+  const businesses = sqliteDb.prepare('SELECT * FROM businesses LIMIT 1').all();
+  if (businesses.length > 0) {
+    defaultBusinessId = getMappedId('businesses', businesses[0].id);
   }
   
-  console.log(`✅ Migrated ${products.length} products`);
+  let inserted = 0;
+  let skipped = 0;
+  
+  for (const product of products) {
+    const newId = getMappedId('products', product.id);
+    
+    // Get business_id - use product's business_id if exists, otherwise use default
+    let businessId = null;
+    if (product.business_id) {
+      businessId = getMappedId('businesses', product.business_id);
+    }
+    
+    // If still null, use default business
+    if (!businessId && defaultBusinessId) {
+      businessId = defaultBusinessId;
+      console.log(`   ⚠️  Product "${product.name}" had no business_id, assigned to default business`);
+    }
+    
+    // Skip if no business_id available
+    if (!businessId) {
+      console.log(`   ⚠️  Skipping product "${product.name}" - no business_id available`);
+      skipped++;
+      continue;
+    }
+    
+    try {
+      await pgPool.query(`
+        INSERT INTO products (id, name, category, price, quantity, business_id, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (id) DO NOTHING
+      `, [
+        newId,
+        product.name,
+        product.category || null,
+        product.price,
+        product.quantity || 0,
+        businessId,
+        product.created_at || new Date().toISOString(),
+        product.updated_at || new Date().toISOString()
+      ]);
+      inserted++;
+    } catch (err) {
+      if (err.code === '23505') { // Unique violation
+        skipped++;
+        console.log(`   ⚠️  Skipped product "${product.name}" (already exists)`);
+      } else {
+        throw err;
+      }
+    }
+  }
+  
+  console.log(`✅ Migrated ${inserted} products, skipped ${skipped}`);
 }
 
 async function migrateStockBatches() {
@@ -187,37 +284,78 @@ async function migrateSales() {
   console.log('📦 Migrating sales...');
   const sales = sqliteDb.prepare('SELECT * FROM sales').all();
   
+  // Get the first business ID as fallback
+  let defaultBusinessId = null;
+  const businesses = sqliteDb.prepare('SELECT * FROM businesses LIMIT 1').all();
+  if (businesses.length > 0) {
+    defaultBusinessId = getMappedId('businesses', businesses[0].id);
+  }
+  
+  let inserted = 0;
+  let skipped = 0;
+  
   for (const sale of sales) {
     const newId = getMappedId('sales', sale.id);
     const productId = sale.product_id ? getMappedId('products', sale.product_id) : null;
-    const businessId = getMappedId('businesses', sale.business_id);
     
-    await pgPool.query(`
-      INSERT INTO sales (id, product_id, product_name, inventory_id, good_id, quantity, selling_price, purchase_price, profit, currency, date, refunded, refunded_quantity, refund_date, business_id, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-      ON CONFLICT (id) DO NOTHING
-    `, [
-      newId,
-      productId,
-      sale.product_name,
-      sale.inventory_id || null,
-      sale.good_id || null,
-      sale.quantity,
-      sale.selling_price,
-      sale.purchase_price,
-      sale.profit,
-      sale.currency || 'USD',
-      sale.date,
-      sale.refunded === 1 || sale.refunded === true,
-      sale.refunded_quantity || 0,
-      sale.refund_date || null,
-      businessId,
-      sale.created_at || new Date().toISOString(),
-      sale.updated_at || new Date().toISOString()
-    ]);
+    // Map inventory_id and good_id to UUIDs if they exist
+    const inventoryId = sale.inventory_id ? getMappedId('goods_inventories', sale.inventory_id) : null;
+    const goodId = sale.good_id ? getMappedId('goods', sale.good_id) : null;
+    
+    // Get business_id - use sale's business_id if exists, otherwise use default
+    let businessId = null;
+    if (sale.business_id) {
+      businessId = getMappedId('businesses', sale.business_id);
+    }
+    
+    // If still null, use default business
+    if (!businessId && defaultBusinessId) {
+      businessId = defaultBusinessId;
+    }
+    
+    // Skip if no business_id available
+    if (!businessId) {
+      console.log(`   ⚠️  Skipping sale "${sale.product_name}" - no business_id available`);
+      skipped++;
+      continue;
+    }
+    
+    try {
+      await pgPool.query(`
+        INSERT INTO sales (id, product_id, product_name, inventory_id, good_id, quantity, selling_price, purchase_price, profit, currency, date, refunded, refunded_quantity, refund_date, business_id, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        ON CONFLICT (id) DO NOTHING
+      `, [
+        newId,
+        productId,
+        sale.product_name,
+        inventoryId,
+        goodId,
+        sale.quantity,
+        sale.selling_price,
+        sale.purchase_price,
+        sale.profit,
+        sale.currency || 'USD',
+        sale.date,
+        sale.refunded === 1 || sale.refunded === true,
+        sale.refunded_quantity || 0,
+        sale.refund_date || null,
+        businessId,
+        sale.created_at || new Date().toISOString(),
+        sale.updated_at || new Date().toISOString()
+      ]);
+      inserted++;
+    } catch (err) {
+      if (err.code === '23505') { // Unique violation
+        skipped++;
+        console.log(`   ⚠️  Skipped sale "${sale.product_name}" (already exists)`);
+      } else {
+        throw err;
+      }
+    }
   }
   
-  console.log(`✅ Migrated ${sales.length} sales`);
+  console.log(`✅ Migrated ${inserted} sales, skipped ${skipped}`);
 }
 
 async function migrateSaleBatchDetails() {
@@ -274,25 +412,63 @@ async function migrateGoodsInventories() {
   console.log('📦 Migrating goods inventories...');
   const inventories = sqliteDb.prepare('SELECT * FROM goods_inventories').all();
   
-  for (const inventory of inventories) {
-    const newId = getMappedId('goods_inventories', inventory.id);
-    const businessId = getMappedId('businesses', inventory.business_id);
-    
-    await pgPool.query(`
-      INSERT INTO goods_inventories (id, name, date, business_id, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (id) DO NOTHING
-    `, [
-      newId,
-      inventory.name,
-      inventory.date,
-      businessId,
-      inventory.created_at || new Date().toISOString(),
-      inventory.updated_at || new Date().toISOString()
-    ]);
+  // Get the first business ID as fallback
+  let defaultBusinessId = null;
+  const businesses = sqliteDb.prepare('SELECT * FROM businesses LIMIT 1').all();
+  if (businesses.length > 0) {
+    defaultBusinessId = getMappedId('businesses', businesses[0].id);
   }
   
-  console.log(`✅ Migrated ${inventories.length} goods inventories`);
+  let inserted = 0;
+  let skipped = 0;
+  
+  for (const inventory of inventories) {
+    const newId = getMappedId('goods_inventories', inventory.id);
+    
+    // Get business_id - use inventory's business_id if exists, otherwise use default
+    let businessId = null;
+    if (inventory.business_id) {
+      businessId = getMappedId('businesses', inventory.business_id);
+    }
+    
+    // If still null, use default business
+    if (!businessId && defaultBusinessId) {
+      businessId = defaultBusinessId;
+      console.log(`   ⚠️  Goods inventory "${inventory.name}" had no business_id, assigned to default business`);
+    }
+    
+    // Skip if no business_id available
+    if (!businessId) {
+      console.log(`   ⚠️  Skipping goods inventory "${inventory.name}" - no business_id available`);
+      skipped++;
+      continue;
+    }
+    
+    try {
+      await pgPool.query(`
+        INSERT INTO goods_inventories (id, name, date, business_id, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (id) DO NOTHING
+      `, [
+        newId,
+        inventory.name,
+        inventory.date,
+        businessId,
+        inventory.created_at || new Date().toISOString(),
+        inventory.updated_at || new Date().toISOString()
+      ]);
+      inserted++;
+    } catch (err) {
+      if (err.code === '23505') { // Unique violation
+        skipped++;
+        console.log(`   ⚠️  Skipped goods inventory "${inventory.name}" (already exists)`);
+      } else {
+        throw err;
+      }
+    }
+  }
+  
+  console.log(`✅ Migrated ${inserted} goods inventories, skipped ${skipped}`);
 }
 
 async function migrateGoods() {
@@ -327,22 +503,54 @@ async function migrateSettings() {
   console.log('📦 Migrating settings...');
   const settings = sqliteDb.prepare('SELECT * FROM settings').all();
   
+  let inserted = 0;
+  let skipped = 0;
+  
   for (const setting of settings) {
+    // business_id can be NULL for global settings
     const businessId = setting.business_id ? getMappedId('businesses', setting.business_id) : null;
     
-    await pgPool.query(`
-      INSERT INTO settings (key, value, business_id, updated_at)
-      VALUES ($1, $2, $3, $4)
-      ON CONFLICT (key, business_id) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
-    `, [
-      setting.key,
-      setting.value,
-      businessId,
-      setting.updated_at || new Date().toISOString()
-    ]);
+    try {
+      // First try to update
+      const updateResult = await pgPool.query(`
+        UPDATE settings 
+        SET value = $1, updated_at = $2 
+        WHERE key = $3 AND (
+          (business_id = $4 AND $4 IS NOT NULL) OR 
+          (business_id IS NULL AND $4 IS NULL)
+        )
+      `, [
+        setting.value,
+        setting.updated_at || new Date().toISOString(),
+        setting.key,
+        businessId
+      ]);
+      
+      // If no rows updated, insert
+      if (updateResult.rowCount === 0) {
+        await pgPool.query(`
+          INSERT INTO settings (key, value, business_id, updated_at)
+          VALUES ($1, $2, $3, $4)
+        `, [
+          setting.key,
+          setting.value,
+          businessId,
+          setting.updated_at || new Date().toISOString()
+        ]);
+      }
+      inserted++;
+    } catch (err) {
+      if (err.code === '23502') {
+        // Not-null constraint - skip this setting
+        console.log(`   ⚠️  Skipped setting "${setting.key}" due to constraint`);
+        skipped++;
+      } else {
+        throw err;
+      }
+    }
   }
   
-  console.log(`✅ Migrated ${settings.length} settings`);
+  console.log(`✅ Migrated ${inserted} settings, skipped ${skipped}`);
 }
 
 async function migrateSessions() {
@@ -398,6 +606,51 @@ async function migrateActivityLogs() {
   console.log(`✅ Migrated ${logs.length} activity logs`);
 }
 
+async function initializeSchema() {
+  console.log('📋 Initializing PostgreSQL schema...');
+  try {
+    const schemaPath = join(__dirname, '../database/schema-postgres.sql');
+    const schema = readFileSync(schemaPath, 'utf8');
+    
+    // Remove comments and split by semicolons
+    const statements = schema
+      .split('\n')
+      .filter(line => !line.trim().startsWith('--') && line.trim().length > 0)
+      .join('\n')
+      .split(';')
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+    
+    const client = await pgPool.connect();
+    try {
+      for (const statement of statements) {
+        if (statement.trim()) {
+          try {
+            await client.query(statement);
+          } catch (err) {
+            // Ignore "already exists" and "duplicate" errors
+            const errorMsg = err.message.toLowerCase();
+            if (!errorMsg.includes('already exists') && 
+                !errorMsg.includes('duplicate') &&
+                !errorMsg.includes('relation') &&
+                !errorMsg.includes('constraint') &&
+                !errorMsg.includes('extension')) {
+              // Only show warnings for non-expected errors
+              console.warn(`⚠️  Schema statement warning: ${err.message.substring(0, 100)}`);
+            }
+          }
+        }
+      }
+      console.log('✅ Schema initialized\n');
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('❌ Error initializing schema:', error.message);
+    throw error;
+  }
+}
+
 async function main() {
   console.log('🚀 Starting SQLite to PostgreSQL migration...\n');
   
@@ -406,9 +659,17 @@ async function main() {
     await pgPool.query('SELECT NOW()');
     console.log('✅ Connected to PostgreSQL\n');
     
+    // Initialize schema first
+    await initializeSchema();
+    
     // Migrate in order (respecting foreign key dependencies)
+    // 1. Users first (with business_id = NULL)
     await migrateUsers();
+    // 2. Businesses (users already exist for owner_id foreign key)
     await migrateBusinesses();
+    // 3. Update users with business_id now that businesses exist
+    await updateUserBusinessIds();
+    // 4. Continue with other tables
     await migrateProducts();
     await migrateStockBatches();
     await migrateStockHistory();

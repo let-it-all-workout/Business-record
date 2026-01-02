@@ -6,15 +6,7 @@ import { User, AuthSession, LoginCredentials, UserRole, Permission, ROLE_PERMISS
 const rawApiUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
 const API_BASE_URL = rawApiUrl.endsWith('/') ? rawApiUrl.slice(0, -1) : rawApiUrl;
 
-// Debug logging (remove in production if needed)
-if (typeof window !== 'undefined') {
-  console.log('🔍 API Configuration:', {
-    VITE_API_URL: import.meta.env.VITE_API_URL,
-    API_BASE_URL: API_BASE_URL,
-    isDev: import.meta.env.DEV,
-    mode: import.meta.env.MODE
-  });
-}
+// Debug logging removed for security
 
 interface AuthContextType {
   user: User | null;
@@ -50,14 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const verifySession = async (token: string) => {
     try {
-      // #region agent log
-      console.log('[AuthContext] Verifying session:', {
-        apiBaseUrl: API_BASE_URL,
-        meUrl: `${API_BASE_URL}/auth/me`,
-        tokenLength: token?.length,
-        tokenPreview: token ? `${token.substring(0, 10)}...` : 'none'
-      });
-      // #endregion
+      // Don't log token information (security)
       const response = await fetch(`${API_BASE_URL}/auth/me`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -108,41 +93,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const login = async (credentials: LoginCredentials) => {
-    // #region agent log
-    const debugData = {apiBaseUrl:API_BASE_URL,viteApiUrl:import.meta.env.VITE_API_URL,isDev:import.meta.env.DEV,mode:import.meta.env.MODE};
-    console.log('🔍 [DEBUG] Login entry:', debugData);
-    fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:92',message:'Login function entry',data:debugData,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     try {
       const loginUrl = `${API_BASE_URL}/auth/login`;
-      // #region agent log
-      
-      const debugInfo = {
-        loginUrl: loginUrl,
-        apiBaseUrl: API_BASE_URL,
-        viteApiUrl: import.meta.env.VITE_API_URL,
-        hasTrailingSlash: API_BASE_URL.endsWith('/'),
-        rawApiUrl: import.meta.env.VITE_API_URL
-      };
-      console.log('🔍 [DEBUG] Login URL details:', debugInfo);
-      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:96',message:'Before fetch request',data:debugInfo,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
       
       // Test backend connectivity first
       try {
         const healthUrl = `${API_BASE_URL}/health`;
-        console.log('🔍 [DEBUG] Testing backend health at:', healthUrl);
         const healthCheck = await fetch(healthUrl, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
         });
-        console.log('🔍 [DEBUG] Health check response:', {
-          status: healthCheck.status,
-          ok: healthCheck.ok,
-          url: healthCheck.url
-        });
+        if (!healthCheck.ok) {
+          throw new Error('Health check failed');
+        }
       } catch (healthError) {
-        console.error('🔍 [DEBUG] Health check failed:', healthError);
         const apiUrl = API_BASE_URL || 'backend server';
         throw new Error(`Cannot connect to API server at ${apiUrl}. Please check your VITE_API_URL environment variable and ensure the backend is running.`);
       }
@@ -155,39 +119,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify(credentials),
       });
 
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:107',message:'After fetch response',data:{status:response.status,statusText:response.statusText,contentType:response.headers.get('content-type'),url:response.url},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
-
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
         const apiUrl = API_BASE_URL || 'backend server';
         const errorMsg = `Cannot connect to API server at ${apiUrl}. Please check your VITE_API_URL environment variable and ensure the backend is running.`;
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:112',message:'Throwing error - non-JSON response',data:{errorMessage:errorMsg,contentType:contentType,apiUrl:apiUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
         throw new Error(errorMsg);
       }
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({ error: 'Login failed' }));
         const errorMsg = error.error || 'Login failed';
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:118',message:'Response not OK - throwing error',data:{errorMessage:errorMsg,status:response.status,errorData:error},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-        // #endregion
         throw new Error(errorMsg);
       }
 
       const data = await response.json();
-      // #region agent log
-      console.log('[AuthContext] Login response data:', {
-        hasToken: !!data.token,
-        hasUser: !!data.user,
-        userRole: data.user?.role,
-        username: data.user?.username
-      });
-      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:125',message:'Login successful',data:{hasToken:!!data.token,hasUser:!!data.user,userRole:data.user?.role},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-      // #endregion
       localStorage.setItem('auth_token', data.token);
       
       // Set user state from login response (don't wait for /auth/me)
@@ -208,14 +153,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Don't clear user state - we already have it from login response
       });
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const errorStack = error instanceof Error ? error.stack : '';
-      const debugErrorData = {errorMessage:errorMessage,containsPort3002:errorMessage.includes('3002'),containsPort3002Lower:errorMessage.toLowerCase().includes('3002')};
-      console.error('🔍 [DEBUG] Login error details:', debugErrorData);
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthContext.tsx:132',message:'Login catch block - error thrown',data:{...debugErrorData,errorStack:errorStack},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
-      // #endregion
-      console.error('Login error:', error);
+      // Don't log sensitive error details in production
+      if (import.meta.env.DEV) {
+        console.error('Login error:', error);
+      }
       throw error;
     }
   };

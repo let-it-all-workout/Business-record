@@ -15,7 +15,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Paths
-const dbPath = join(__dirname, '../database/business-record.db');
+const dbPath = join(__dirname, '../database/novagadget.db');
 const backupDir = join(__dirname, '../database/backups');
 
 // Create backup directory if it doesn't exist
@@ -26,7 +26,7 @@ if (!existsSync(backupDir)) {
 // Generate backup filename with timestamp
 const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0] + '_' + 
                   new Date().toTimeString().split(' ')[0].replace(/:/g, '-');
-const backupPath = join(backupDir, `business-record_backup_${timestamp}.db`);
+const backupPath = join(backupDir, `novagadget_backup_${timestamp}.db`);
 
 try {
   // Check if database exists
@@ -51,7 +51,7 @@ try {
   
   // List recent backups
   const backups = readdirSync(backupDir)
-    .filter(f => f.startsWith('business-record_backup_') && f.endsWith('.db'))
+    .filter(f => (f.startsWith('novagadget_backup_') || f.startsWith('pre-postgres-migration_')) && f.endsWith('.db'))
     .sort()
     .reverse()
     .slice(0, 5);
@@ -67,7 +67,7 @@ try {
   
   // Keep only last 10 backups to save space
   const allBackups = readdirSync(backupDir)
-    .filter(f => f.startsWith('business-record_backup_') && f.endsWith('.db'))
+    .filter(f => (f.startsWith('novagadget_backup_') || f.startsWith('pre-postgres-migration_')) && f.endsWith('.db'))
     .sort()
     .reverse();
   

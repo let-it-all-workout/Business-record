@@ -23,6 +23,12 @@ export default function LoginForm({ onSwitchToRegister }: { onSwitchToRegister?:
     }
   };
 
+  // #region agent log
+  const rawApiUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
+  const API_BASE_URL = rawApiUrl.endsWith('/') ? rawApiUrl.slice(0, -1) : rawApiUrl;
+  fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LoginForm.tsx:26',message:'LoginForm render - checking DOM for debug elements',data:{viteApiUrl:import.meta.env.VITE_API_URL,apiBaseUrl:API_BASE_URL,mode:import.meta.env.MODE,hasDebugDiv:false},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
       <div className="card max-w-md w-full p-8">

@@ -135,7 +135,19 @@ export default function UserManagement() {
           setTimeout(() => setSuccessMessage(''), 3000);
         } else {
           const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
-          setError(errorData.error || `Failed to create user: ${response.status}`);
+          const backendErrorMsg = errorData.error || `Failed to ${editingUser ? 'update' : 'create'} user: ${response.status}`;
+          
+          // Add error code prefix while preserving descriptive message
+          let errorMsg = backendErrorMsg;
+          if (backendErrorMsg.includes('Password must contain at least one uppercase') || 
+              backendErrorMsg.includes('uppercase letter, one lowercase letter')) {
+            errorMsg = `AUTH-006: ${backendErrorMsg}`;
+          } else if (backendErrorMsg.includes('Password must be at least 6 characters')) {
+            errorMsg = `USER-004: ${backendErrorMsg}`;
+          } else if (!backendErrorMsg.includes('USER-') && !backendErrorMsg.includes('NET-') && !backendErrorMsg.includes('AUTH-')) {
+            errorMsg = editingUser ? `USER-002: ${backendErrorMsg}` : `USER-001: ${backendErrorMsg}`;
+          }
+          setError(errorMsg);
         }
       }
     } catch (error) {
@@ -143,13 +155,20 @@ export default function UserManagement() {
       if (error instanceof TypeError && (error.message.includes('fetch') || error.message.includes('Failed to fetch'))) {
         setError('NET-001: Error: try again later');
       } else {
-        const errorMsg = error instanceof Error ? error.message : 'USER-001: Failed to create user';
-        // Add error code if not present
-        if (!errorMsg.includes('USER-') && !errorMsg.includes('NET-') && !errorMsg.includes('AUTH-')) {
-          setError(editingUser ? 'USER-002: Failed to update user' : 'USER-001: Failed to create user');
-        } else {
-          setError(errorMsg);
+        let errorMsg = error instanceof Error ? error.message : 'Failed to create user';
+        
+        // Add error code prefix while preserving descriptive message
+        if (errorMsg.includes('Password must contain at least one uppercase') || 
+            errorMsg.includes('uppercase letter, one lowercase letter')) {
+          // Remove any existing error code prefix before adding AUTH-006
+          errorMsg = `AUTH-006: ${errorMsg.replace(/^(AUTH-006: |USER-001: |USER-002: )?/, '')}`;
+        } else if (errorMsg.includes('Password must be at least 6 characters')) {
+          errorMsg = `USER-004: ${errorMsg.replace(/^(USER-004: |USER-001: |USER-002: )?/, '')}`;
+        } else if (!errorMsg.includes('USER-') && !errorMsg.includes('NET-') && !errorMsg.includes('AUTH-')) {
+          errorMsg = editingUser ? `USER-002: ${errorMsg}` : `USER-001: ${errorMsg}`;
         }
+        
+        setError(errorMsg);
       }
     }
   };

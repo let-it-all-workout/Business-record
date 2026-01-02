@@ -81,8 +81,8 @@ export function validatePasswordStrength(password) {
     return { valid: false, error: 'Password is required' };
   }
   
-  if (password.length < 12) {
-    return { valid: false, error: 'Password must be at least 12 characters' };
+  if (password.length < 6) {
+    return { valid: false, error: 'Password must be at least 6 characters' };
   }
   
   const hasUpperCase = /[A-Z]/.test(password);

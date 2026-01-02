@@ -101,8 +101,8 @@ router.post('/register', registerLimiter, async (req, res) => {
     }
     
     // Strong password requirements
-    if (password.length < 12) {
-      return res.status(400).json({ error: 'Password must be at least 12 characters' });
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
     // Check for password complexity
     const hasUpperCase = /[A-Z]/.test(password);
@@ -490,8 +490,8 @@ router.post('/users', verifyToken, async (req, res) => {
     }
     
     // Strong password requirements
-    if (password.length < 12) {
-      return res.status(400).json({ error: 'Password must be at least 12 characters' });
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
     // Check for password complexity
     const hasUpperCase = /[A-Z]/.test(password);
@@ -669,8 +669,8 @@ router.post('/change-password', verifyToken, async (req, res) => {
     }
 
     // Strong password requirements
-    if (newPassword.length < 12) {
-      return res.status(400).json({ error: 'New password must be at least 12 characters' });
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
     }
     // Check for password complexity
     const hasUpperCase = /[A-Z]/.test(newPassword);

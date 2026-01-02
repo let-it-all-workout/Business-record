@@ -440,8 +440,19 @@ function App() {
   };
 
   const handleRecordSale = async (productId: string, quantity: number, sellingPrice: number) => {
+    // #region agent log
+    const recordSaleData = {productId,quantity,sellingPrice,productsCount:products.length};
+    console.log('[DEBUG] handleRecordSale called:', recordSaleData);
+    fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:442',message:'handleRecordSale called',data:recordSaleData,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+    // #endregion
     const product = products.find(p => p.id === productId);
-    if (!product) return;
+    if (!product) {
+      // #region agent log
+      console.log('[DEBUG] Product not found:', {productId,availableIds:products.map(p=>p.id)});
+      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:444',message:'Product not found',data:{productId,availableIds:products.map(p=>p.id)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+      // #endregion
+      return;
+    }
 
     if (quantity > product.quantity) {
       alert(`Insufficient stock! Only ${product.quantity} available.`);
@@ -488,8 +499,16 @@ function App() {
     };
 
     try {
+      // #region agent log
+      console.log('[DEBUG] Creating sale:', {productId,quantity,sellingPrice,profit,batchDetailsCount:batchDetails.length});
+      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:490',message:'Creating sale',data:{productId,quantity,sellingPrice,profit,batchDetailsCount:batchDetails.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+      // #endregion
       // Save sale to database
       await dataService.createSale(newSale);
+      // #region agent log
+      console.log('[DEBUG] Sale created successfully');
+      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:492',message:'Sale created successfully',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+      // #endregion
       
       // Reload data from database to get updated state
       const updatedProducts = await dataService.getProducts();
@@ -503,6 +522,11 @@ function App() {
       setSuccessMessage(`Sale recorded successfully! ${quantity} units of ${product.name} sold for $${(quantity * sellingPrice).toFixed(2)} (Profit: $${profit.toFixed(2)})`);
     } catch (error) {
       console.error('Error recording sale:', error);
+      // #region agent log
+      const errorData = {errorType:error?.constructor?.name,errorMessage:error instanceof Error?error.message:String(error)};
+      console.log('[DEBUG] Sale creation error:', errorData);
+      fetch('http://127.0.0.1:7243/ingest/f872cd0a-6ab4-4d06-95aa-1c2786551c1b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:504',message:'Sale creation error',data:errorData,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+      // #endregion
       const errorMessage = error instanceof Error ? error.message : 'Failed to record sale';
       alert(`Error: ${errorMessage}\n\nPlease ensure the server is running and the database is accessible.`);
     }

@@ -6,6 +6,7 @@ import inventoryRouter from './routes/inventory.js';
 import settingsRouter from './routes/settings.js';
 import backupRouter from './routes/backup.js';
 import authRouter from './routes/auth.js';
+import { errorHandlerMiddleware } from './middleware/errorHandler.js';
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -76,6 +77,9 @@ app.use('/api/backup', backupRouter);
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'NovaGadget API is running' });
 });
+
+// Error handling middleware (must be last)
+app.use(errorHandlerMiddleware);
 
 // Start server
 app.listen(PORT, () => {

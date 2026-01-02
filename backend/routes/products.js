@@ -2,6 +2,7 @@ import express from 'express';
 import db from '../database/db-postgres.js';
 import { verifyToken } from './auth.js';
 import { validateUUIDParam } from '../middleware/validation.js';
+import { handleError } from '../middleware/errorHandler.js';
 
 const router = express.Router();
 
@@ -61,7 +62,8 @@ router.get('/', verifyToken, async (req, res) => {
     res.json(productsWithBatches);
   } catch (error) {
     console.error('Error fetching products:', error);
-    res.status(500).json({ error: 'Failed to fetch products' });
+    const errorResponse = handleError(error, req, res, 'Failed to fetch products. Please try again.');
+    res.status(500).json(errorResponse);
   }
 });
 
@@ -110,7 +112,8 @@ router.get('/:id', verifyToken, validateUUIDParam('id'), async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching product:', error);
-    res.status(500).json({ error: 'Failed to fetch product' });
+    const errorResponse = handleError(error, req, res, 'Failed to fetch product. Please try again.');
+    res.status(500).json(errorResponse);
   }
 });
 
@@ -179,8 +182,8 @@ router.post('/', verifyToken, async (req, res) => {
 
     res.status(201).json({ id, message: 'Product created successfully' });
   } catch (error) {
-    console.error('Error creating product:', error);
-    res.status(500).json({ error: 'Failed to create product' });
+    const errorResponse = handleError(error, req, res, 'Failed to create product. Please try again.');
+    res.status(500).json(errorResponse);
   }
 });
 
@@ -222,7 +225,8 @@ router.put('/:id', verifyToken, validateUUIDParam('id'), async (req, res) => {
     res.json({ message: 'Product updated successfully' });
   } catch (error) {
     console.error('Error updating product:', error);
-    res.status(500).json({ error: 'Failed to update product' });
+    const errorResponse = handleError(error, req, res, 'Failed to update product. Please try again.');
+    res.status(500).json(errorResponse);
   }
 });
 
@@ -249,7 +253,8 @@ router.delete('/:id', verifyToken, validateUUIDParam('id'), async (req, res) => 
     res.json({ message: 'Product deleted successfully' });
   } catch (error) {
     console.error('Error deleting product:', error);
-    res.status(500).json({ error: 'Failed to delete product' });
+    const errorResponse = handleError(error, req, res, 'Failed to delete product. Please try again.');
+    res.status(500).json(errorResponse);
   }
 });
 
@@ -318,7 +323,8 @@ router.post('/:id/stock', verifyToken, async (req, res) => {
     res.json({ message: 'Stock added successfully', batchId: batchIdToUse });
   } catch (error) {
     console.error('Error adding stock:', error);
-    res.status(500).json({ error: 'Failed to add stock' });
+    const errorResponse = handleError(error, req, res, 'Failed to add stock. Please try again.');
+    res.status(500).json(errorResponse);
   }
 });
 

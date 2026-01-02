@@ -2,6 +2,7 @@ import express from 'express';
 import db from '../database/db-postgres.js';
 import { verifyToken } from './auth.js';
 import { validateUUIDParam, validateUUID, validateNumeric, sanitizeString } from '../middleware/validation.js';
+import { handleError } from '../middleware/errorHandler.js';
 
 const router = express.Router();
 
@@ -54,7 +55,8 @@ router.get('/', verifyToken, async (req, res) => {
     res.json(inventoriesWithGoods);
   } catch (error) {
     console.error('Error fetching inventories:', error);
-    res.status(500).json({ error: 'Failed to fetch inventories' });
+    const errorResponse = handleError(error, req, res, 'Failed to fetch inventories. Please try again.');
+    res.status(500).json(errorResponse);
   }
 });
 
@@ -87,7 +89,8 @@ router.get('/:id', verifyToken, validateUUIDParam('id'), async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching inventory:', error);
-    res.status(500).json({ error: 'Failed to fetch inventory' });
+    const errorResponse = handleError(error, req, res, 'Failed to fetch inventory. Please try again.');
+    res.status(500).json(errorResponse);
   }
 });
 
@@ -159,7 +162,8 @@ router.post('/', verifyToken, async (req, res) => {
     res.status(201).json({ id, message: 'Inventory created successfully' });
   } catch (error) {
     console.error('Error creating inventory:', error);
-    res.status(500).json({ error: 'Failed to create inventory' });
+    const errorResponse = handleError(error, req, res, 'Failed to create inventory. Please try again.');
+    res.status(500).json(errorResponse);
   }
 });
 
@@ -229,7 +233,8 @@ router.put('/:id', verifyToken, validateUUIDParam('id'), async (req, res) => {
     res.json({ message: 'Inventory updated successfully' });
   } catch (error) {
     console.error('Error updating inventory:', error);
-    res.status(500).json({ error: 'Failed to update inventory' });
+    const errorResponse = handleError(error, req, res, 'Failed to update inventory. Please try again.');
+    res.status(500).json(errorResponse);
   }
 });
 
@@ -255,7 +260,8 @@ router.delete('/:id', verifyToken, validateUUIDParam('id'), async (req, res) => 
     res.json({ message: 'Inventory deleted successfully' });
   } catch (error) {
     console.error('Error deleting inventory:', error);
-    res.status(500).json({ error: 'Failed to delete inventory' });
+    const errorResponse = handleError(error, req, res, 'Failed to delete inventory. Please try again.');
+    res.status(500).json(errorResponse);
   }
 });
 

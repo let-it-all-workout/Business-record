@@ -2,6 +2,7 @@ import express from 'express';
 import db from '../database/db-postgres.js';
 import { verifyToken } from './auth.js';
 import { validateUUIDParam, validateUUID, validateNumeric, sanitizeString } from '../middleware/validation.js';
+import { handleError } from '../middleware/errorHandler.js';
 
 const router = express.Router();
 
@@ -310,13 +311,8 @@ router.post('/', verifyToken, async (req, res) => {
 
     res.status(201).json(result);
   } catch (error) {
-    console.error('Error creating sale:', error);
-    // Don't expose internal error details in production
-    const isDevelopment = process.env.NODE_ENV === 'development';
-    res.status(500).json({ 
-      error: 'Failed to create sale',
-      ...(isDevelopment && { details: error.message })
-    });
+    const errorResponse = handleError(error, req, res, 'Failed to create sale. Please try again.');
+    res.status(500).json(errorResponse);
   }
 });
 
@@ -488,9 +484,8 @@ router.put('/:id', verifyToken, validateUUIDParam('id'), async (req, res) => {
     
     res.json(result);
   } catch (error) {
-    console.error('[UPDATE SALE] ❌ Error updating sale:', error);
-    console.error('[UPDATE SALE] Error stack:', error.stack);
-    res.status(500).json({ error: `Failed to update sale: ${error.message || 'Unknown error'}` });
+    const errorResponse = handleError(error, req, res, 'Failed to update sale. Please try again.');
+    res.status(500).json(errorResponse);
   }
 });
 

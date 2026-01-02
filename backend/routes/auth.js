@@ -4,15 +4,11 @@ import bcrypt from 'bcrypt';
 import rateLimit from 'express-rate-limit';
 import db from '../database/db-postgres.js';
 import { validateUUIDParam, validateUUID } from '../middleware/validation.js';
+import { handleError } from '../middleware/errorHandler.js';
 
 const router = express.Router();
 
 // Default user initialization removed - use admin management script instead
-
-// Initialize on load (async)
-initializeDefaultUser().catch(err => {
-  console.error('Error initializing default user:', err.message);
-});
 
 // Rate limiting for authentication endpoints
 const loginLimiter = rateLimit({
@@ -191,33 +187,16 @@ router.post('/register', registerLimiter, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Error registering user:', error);
-    const errorMessage = error.message || String(error);
+    // Use centralized error handler
+    const errorResponse = handleError(error, req, res, 'Failed to register user. Please try again.');
     
-    // Provide more specific error messages
-    if (errorMessage.includes('UNIQUE constraint failed')) {
-      return res.status(409).json({ error: 'Username or email already exists' });
+    // Handle specific error cases
+    const errorMessage = error.message || String(error);
+    if (errorMessage.includes('UNIQUE constraint') || errorMessage.includes('duplicate key')) {
+      return res.status(409).json({ error: 'Username or email already exists', errorId: errorResponse.errorId });
     }
-    if (errorMessage.includes('NOT NULL constraint failed')) {
-      return res.status(400).json({ error: 'Missing required data. Please check all fields are filled.' });
-    }
-    if (errorMessage.includes('FOREIGN KEY constraint failed')) {
-      return res.status(400).json({ error: 'Database constraint error. Please try again.' });
-    }
-    // Provide more specific error message for debugging
-    if (errorMessage.includes('no such table')) {
-      res.status(500).json({ error: 'Database tables not initialized. Please check backend logs.' });
-    } else if (errorMessage.includes('UNIQUE constraint')) {
-      res.status(409).json({ error: 'Username or email already exists' });
-    } else {
-      // Log full error but return generic message to client
-      console.error('Registration error details:', {
-        message: errorMessage,
-        stack: error.stack,
-        name: error.name
-      });
-      res.status(500).json({ error: `Failed to register user: ${errorMessage.substring(0, 100)}` });
-    }
+    
+    res.status(500).json(errorResponse);
   }
 });
 
@@ -307,8 +286,8 @@ router.post('/login', loginLimiter, async (req, res) => {
       expiresAt,
     });
   } catch (error) {
-    console.error('Error logging in:', error);
-    res.status(500).json({ error: 'Failed to login' });
+    const errorResponse = handleError(error, req, res, 'Failed to login. Please try again.');
+    res.status(500).json(errorResponse);
   }
 });
 
@@ -369,8 +348,8 @@ export async function verifyToken(req, res, next) {
 
     next();
   } catch (error) {
-    console.error('Error verifying token:', error);
-    res.status(500).json({ error: 'Token verification failed' });
+    const errorResponse = handleError(error, req, res, 'Token verification failed');
+    res.status(500).json(errorResponse);
   }
 }
 
@@ -442,8 +421,8 @@ router.get('/session/debug', async (req, res) => {
       totalSessions: totalSessions
     });
   } catch (error) {
-    console.error('Error in session debug endpoint:', error);
-    res.status(500).json({ error: 'Failed to get session debug info', details: error.message });
+    const errorResponse = handleError(error, req, res, 'Failed to get session info');
+    res.status(500).json(errorResponse);
   }
 });
 

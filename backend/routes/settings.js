@@ -1,6 +1,7 @@
 import express from 'express';
 import db from '../database/db-postgres.js';
 import { verifyToken } from './auth.js';
+import { handleError } from '../middleware/errorHandler.js';
 
 const router = express.Router();
 
@@ -16,7 +17,8 @@ router.get('/:key', verifyToken, async (req, res) => {
     res.json({ value: setting.value });
   } catch (error) {
     console.error('Error fetching setting:', error);
-    res.status(500).json({ error: 'Failed to fetch setting' });
+    const errorResponse = handleError(error, req, res, 'Failed to fetch setting. Please try again.');
+    res.status(500).json(errorResponse);
   }
 });
 
@@ -38,7 +40,8 @@ router.post('/:key', verifyToken, async (req, res) => {
     res.json({ message: 'Setting updated successfully' });
   } catch (error) {
     console.error('Error updating setting:', error);
-    res.status(500).json({ error: 'Failed to update setting' });
+    const errorResponse = handleError(error, req, res, 'Failed to update setting. Please try again.');
+    res.status(500).json(errorResponse);
   }
 });
 

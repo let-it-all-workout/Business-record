@@ -136,7 +136,8 @@ router.get('/', async (req, res) => {
     if (process.env.NODE_ENV !== 'production') {
       console.error('Error listing backups:', error);
     }
-    res.status(500).json({ error: 'Failed to list backups', details: process.env.NODE_ENV !== 'production' ? error.message : undefined });
+    const errorResponse = handleError(error, req, res, 'Failed to list backups. Please try again.');
+    res.status(500).json(errorResponse);
   }
 });
 
@@ -444,7 +445,8 @@ router.get('/diagnostic', async (req, res) => {
     
     res.json(info);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    const errorResponse = handleError(error, req, res, 'An error occurred');
+    res.status(500).json(errorResponse);
   }
 });
 

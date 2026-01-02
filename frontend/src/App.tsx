@@ -658,9 +658,15 @@ function App() {
   }, 0);
   
   // Profit: Use recalculated profit from database (already accounts for refunds)
+  // Ensure we only count profit from valid sales and handle null/undefined cases
   const totalProfit = getFilteredSales.reduce((sum, sale) => {
     // The sale.profit is already recalculated in the database to reflect refunds
-    return sum + (sale.profit || 0);
+    // Handle cases where profit might be null, undefined, or NaN
+    const profit = sale.profit;
+    if (profit === null || profit === undefined || isNaN(profit)) {
+      return sum;
+    }
+    return sum + Number(profit);
   }, 0);
   
   const currencySymbol = CURRENCIES.find(c => c.code === globalCurrency)?.symbol || '$';
@@ -1032,7 +1038,7 @@ function App() {
       {(!isSuperAdmin || selectedBusinessId) && (
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-7xl">
         {/* Statistics Dashboard */}
-        <div className="mb-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="mb-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
           <div className="stat-card">
             <div className="flex items-start justify-between">
               <div className="flex-1">
@@ -1095,7 +1101,7 @@ function App() {
                     </button>
                   </div>
                 </div>
-                <p className="stat-value">{currencySymbol}{totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                <p className="stat-value break-words min-w-0">{currencySymbol}{totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 <p className="text-sm text-slate-500 mt-1">
                   {revenueViewMode === 'yearly' 
                     ? `${getFilteredSales.length} transactions this year`
@@ -1116,17 +1122,17 @@ function App() {
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <p className="stat-label">Total Profit</p>
-                  <p className={`stat-value flex items-center gap-1 ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                  <p className={`stat-value flex items-center gap-1 flex-wrap ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                     {totalProfit >= 0 ? (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                       </svg>
                     ) : (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
                       </svg>
                     )}
-                    {currencySymbol}{totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <span className="break-words min-w-0">{currencySymbol}{totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </p>
                   <p className={`text-sm mt-1 flex items-center gap-1 ${totalRevenue > 0 && ((totalProfit / totalRevenue) * 100) >= 0 ? 'text-emerald-600' : totalRevenue > 0 ? 'text-red-600' : 'text-slate-500'}`}>
                     {totalRevenue > 0 ? (
@@ -1658,9 +1664,16 @@ function App() {
         />
 
         {showUserManagement && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white border-b border-slate-200 p-4 flex items-center justify-between">
+          <div 
+            className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setShowUserManagement(false);
+              }
+            }}
+          >
+            <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="sticky top-0 bg-white border-b border-slate-200 p-4 flex items-center justify-between z-10">
                 <h2 className="text-xl font-bold text-slate-900">User Management</h2>
                 <button
                   onClick={() => setShowUserManagement(false)}

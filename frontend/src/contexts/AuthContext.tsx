@@ -6,8 +6,6 @@ import { User, AuthSession, LoginCredentials, UserRole, Permission, ROLE_PERMISS
 const rawApiUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
 const API_BASE_URL = rawApiUrl.endsWith('/') ? rawApiUrl.slice(0, -1) : rawApiUrl;
 
-// Debug logging removed for security
-
 interface AuthContextType {
   user: User | null;
   session: AuthSession | null;

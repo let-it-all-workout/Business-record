@@ -81,7 +81,7 @@ https://[service-name]-[random-id].up.railway.app
 ```
 
 **Examples:**
-- `https://business-record-production.up.railway.app`
+- `https://your-app.up.railway.app`
 - `https://novagadget-backend.up.railway.app`
 - `https://backend-abc123.up.railway.app`
 

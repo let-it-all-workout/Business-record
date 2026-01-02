@@ -91,7 +91,7 @@ curl https://your-backend-url.up.railway.app/api/auth/users \
   {
     "id": "uuid-here",
     "username": "superadmin",
-    "email": "novagadget72@gmail.com",
+    "email": "superadmin@example.com",
     "role": "super_admin"
   }
 ]
@@ -149,7 +149,7 @@ SELECT COUNT(*) FROM goods_inventories;
 
 ```bash
 # Connect using your DATABASE_URL
-psql "postgresql://postgres:password@tramway.proxy.rlwy.net:41903/railway"
+psql "postgresql://postgres:password@HOST:PORT/railway"
 
 # Then run SQL queries
 \dt                    # List all tables

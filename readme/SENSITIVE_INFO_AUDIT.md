@@ -10,7 +10,7 @@
 
 **Exposed Data:**
 ```bash
-export DATABASE_URL="postgresql://postgres:NaEDyWNcvwzhEkTlzVHpGZwGcOiANdhJ@tramway.proxy.rlwy.net:41903/railway"
+export DATABASE_URL="postgresql://postgres:PASSWORD@HOST:PORT/railway"
 ```
 
 **Risk:** CRITICAL - Anyone with access to this file can access your production database

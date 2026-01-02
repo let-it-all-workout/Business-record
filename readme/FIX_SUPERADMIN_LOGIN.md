@@ -8,7 +8,7 @@
 
 The superadmin user exists in PostgreSQL with:
 - ✅ Username: `superadmin`
-- ✅ Email: `novagadget72@gmail.com`
+- ✅ Email: `superadmin@example.com`
 - ✅ Role: `super_admin`
 - ✅ Active: `true`
 - ✅ Password hash exists (bcrypt format)
@@ -119,7 +119,7 @@ Then delete the old one or update it.
 
 ```bash
 cd /home/kevin/Desktop/Business-record/backend
-export DATABASE_URL="postgresql://postgres:YOUR_PASSWORD_HERE@tramway.proxy.rlwy.net:41903/railway"
+export DATABASE_URL="postgresql://postgres:YOUR_PASSWORD_HERE@HOST:PORT/railway"
 export NEW_PASSWORD="your-new-secure-password"
 node scripts/reset-superadmin-password.js
 ```
@@ -149,7 +149,7 @@ Should return:
   "user": {
     "id": "...",
     "username": "superadmin",
-    "email": "novagadget72@gmail.com",
+    "email": "superadmin@example.com",
     "role": "super_admin"
   }
 }

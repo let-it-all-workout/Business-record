@@ -11,6 +11,7 @@ export default function UserManagement() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [formData, setFormData] = useState({
@@ -78,12 +79,13 @@ export default function UserManagement() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
     try {
       const token = localStorage.getItem('auth_token');
       
       if (editingUser) {
         // Update user
-        const response = await fetch(`/api/auth/users/${editingUser.id}`, {
+        const response = await fetch(`${API_BASE_URL}/auth/users/${editingUser.id}`, {
           method: 'PUT',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -99,10 +101,15 @@ export default function UserManagement() {
         if (response.ok) {
           await loadUsers();
           resetForm();
+          setSuccessMessage('User updated successfully');
+          setTimeout(() => setSuccessMessage(''), 3000);
+        } else {
+          const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+          setError(errorData.error || `Failed to update user: ${response.status}`);
         }
       } else {
         // Create user
-        const response = await fetch('/api/auth/register', {
+        const response = await fetch(`${API_BASE_URL}/auth/register`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -114,11 +121,16 @@ export default function UserManagement() {
         if (response.ok) {
           await loadUsers();
           resetForm();
+          setSuccessMessage('User created successfully');
+          setTimeout(() => setSuccessMessage(''), 3000);
+        } else {
+          const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+          setError(errorData.error || `Failed to create user: ${response.status}`);
         }
       }
     } catch (error) {
       console.error('Error saving user:', error);
-      alert('Failed to save user');
+      setError(error instanceof Error ? error.message : 'Failed to save user');
     }
   };
 
@@ -190,6 +202,17 @@ export default function UserManagement() {
           </button>
         )}
       </div>
+
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+          {error}
+        </div>
+      )}
+      {successMessage && (
+        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+          {successMessage}
+        </div>
+      )}
 
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 p-4 bg-slate-50 rounded-lg space-y-4">
@@ -271,11 +294,24 @@ export default function UserManagement() {
             )}
           </div>
 
-          <div className="flex gap-2">
-            <button type="submit" className="btn-primary">
-              {editingUser ? 'Update' : 'Create'}
+          <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-slate-200 mt-4">
+            <button 
+              type="submit" 
+              className="btn-primary flex-1 min-w-0 whitespace-nowrap relative z-10"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              {editingUser ? 'Update User' : 'Create User'}
             </button>
-            <button type="button" onClick={resetForm} className="btn-secondary">
+            <button 
+              type="button" 
+              onClick={resetForm}
+              className="btn-secondary flex-1 min-w-0 whitespace-nowrap relative z-10"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
               Cancel
             </button>
           </div>

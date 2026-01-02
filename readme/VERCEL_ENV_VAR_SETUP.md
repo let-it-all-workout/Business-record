@@ -7,7 +7,7 @@
 1. Go to **Railway Dashboard**
 2. Select your backend service
 3. Go to **Settings** → **Networking**
-4. Find your **Public Domain** (e.g., `https://business-record-production.up.railway.app`)
+4. Find your **Public Domain** (e.g., `https://your-app.up.railway.app`)
 5. **Copy the URL** (without trailing slash)
 
 ### Step 2: Set Environment Variable in Vercel

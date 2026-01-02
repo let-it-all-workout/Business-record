@@ -7,8 +7,8 @@
 1. Go to **Vercel Dashboard** → Your Project → **Settings** → **Environment Variables**
 2. Find `VITE_API_URL`
 3. Check the value:
-   - ❌ **Wrong:** `https://business-record-production.up.railway.app/` (has trailing slash)
-   - ✅ **Correct:** `https://business-record-production.up.railway.app` (no trailing slash)
+   - ❌ **Wrong:** `https://your-app.up.railway.app/` (has trailing slash)
+   - ✅ **Correct:** `https://your-app.up.railway.app` (no trailing slash)
 
 **If it has a trailing slash:**
 - Click **Edit**
@@ -20,7 +20,7 @@
 
 Open in browser or use curl:
 ```bash
-curl https://business-record-production.up.railway.app/api/health
+curl https://your-app.up.railway.app/api/health
 ```
 
 **Expected response:**
@@ -110,25 +110,25 @@ After fixes, you should see in console:
 
 ```
 🔍 API Configuration: {
-  VITE_API_URL: "https://business-record-production.up.railway.app",
-  API_BASE_URL: "https://business-record-production.up.railway.app",
+  VITE_API_URL: "https://your-app.up.railway.app",
+  API_BASE_URL: "https://your-app.up.railway.app",
   isDev: false,
   mode: "production"
 }
 
 🔍 [DEBUG] Login URL details: {
-  loginUrl: "https://business-record-production.up.railway.app/api/auth/login",
-  apiBaseUrl: "https://business-record-production.up.railway.app",
-  viteApiUrl: "https://business-record-production.up.railway.app",
+  loginUrl: "https://your-app.up.railway.app/api/auth/login",
+  apiBaseUrl: "https://your-app.up.railway.app",
+  viteApiUrl: "https://your-app.up.railway.app",
   hasTrailingSlash: false
 }
 
-🔍 [DEBUG] Testing backend health at: https://business-record-production.up.railway.app/api/health
+🔍 [DEBUG] Testing backend health at: https://your-app.up.railway.app/api/health
 
 🔍 [DEBUG] Health check response: {
   status: 200,
   ok: true,
-  url: "https://business-record-production.up.railway.app/api/health"
+  url: "https://your-app.up.railway.app/api/health"
 }
 ```
 
@@ -162,7 +162,7 @@ If all above are correct but still getting errors:
 3. **Test Backend Manually:**
    ```bash
    # Test health endpoint
-   curl https://business-record-production.up.railway.app/api/health
+   curl https://your-app.up.railway.app/api/health
    
    # Test login endpoint (will fail but shows if backend responds)
    curl -X POST https://business-record-production.up.railway.app/api/auth/login \

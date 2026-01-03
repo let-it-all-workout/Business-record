@@ -86,7 +86,7 @@ router.post('/register', registerLimiter, async (req, res) => {
     }
 
     // Sanitize and validate inputs
-    username = sanitizeString(username, 50);
+    username = sanitizeString(username, 50).toLowerCase();
     email = email.trim().toLowerCase();
     fullName = sanitizeString(fullName, 100);
     businessName = sanitizeString(businessName, 100);
@@ -122,9 +122,9 @@ router.post('/register', registerLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Business name must be between 2 and 100 characters' });
     }
 
-    // Check if username or email already exists
+    // Check if username or email already exists (case-insensitive)
     const existingUser = await db.prepare(`
-      SELECT id FROM users WHERE username = $1 OR email = $2
+      SELECT id FROM users WHERE LOWER(username) = $1 OR email = $2
     `).get(username, email);
 
     if (existingUser) {
@@ -219,12 +219,15 @@ router.post('/login', loginLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Invalid password' });
     }
 
-    // Get user by username
+    // Convert username to lowercase for case-insensitive comparison
+    const usernameLower = username.toLowerCase();
+
+    // Get user by username (case-insensitive)
     const user = await db.prepare(`
       SELECT id, username, email, full_name, role, is_active, business_id, password_hash
       FROM users
-      WHERE username = $1
-    `).get(username);
+      WHERE LOWER(username) = $1
+    `).get(usernameLower);
 
     if (!user || !user.is_active) {
       // Don't reveal whether user exists or is inactive (security best practice)
@@ -476,7 +479,7 @@ router.post('/users', verifyToken, async (req, res) => {
     }
 
     // Sanitize and validate inputs
-    username = sanitizeString(username, 50);
+    username = sanitizeString(username, 50).toLowerCase();
     email = email.trim().toLowerCase();
     fullName = sanitizeString(fullName, 100);
     
@@ -509,9 +512,9 @@ router.post('/users', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Full name must be between 2 and 100 characters' });
     }
 
-    // Check if username or email already exists
+    // Check if username or email already exists (case-insensitive)
     const existingUser = await db.prepare(`
-      SELECT id FROM users WHERE username = $1 OR email = $2
+      SELECT id FROM users WHERE LOWER(username) = $1 OR email = $2
     `).get(username, email);
 
     if (existingUser) {

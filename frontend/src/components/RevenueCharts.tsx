@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Sale } from '../types';
 import { formatCurrency } from '../utils/format';
@@ -12,6 +12,18 @@ interface RevenueChartsProps {
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
 export default function RevenueCharts({ sales, globalCurrency }: RevenueChartsProps) {
+  // Track window size for responsive pie chart
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+  
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowWidth(window.innerWidth);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // Filter valid sales
   const validSales = sales.filter(s => s && s !== null);
 
@@ -118,11 +130,12 @@ export default function RevenueCharts({ sales, globalCurrency }: RevenueChartsPr
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full overflow-x-hidden">
       {/* Revenue Trends Chart */}
-      <div className="card p-6">
+      <div className="card p-4 sm:p-6 overflow-hidden">
         <h3 className="text-lg font-semibold text-slate-900 mb-4">Revenue Trends (Last 30 Days)</h3>
-        <ResponsiveContainer width="100%" height={300}>
+        <div className="w-full overflow-x-auto">
+          <ResponsiveContainer width="100%" height={300} minHeight={250}>
           <LineChart data={revenueTrends}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis 
@@ -154,29 +167,28 @@ export default function RevenueCharts({ sales, globalCurrency }: RevenueChartsPr
               dot={{ r: 4 }}
             />
           </LineChart>
-        </ResponsiveContainer>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Sales Distribution Pie Chart */}
-        <div className="card p-6">
+        <div className="card p-4 sm:p-6 overflow-hidden">
           <h3 className="text-lg font-semibold text-slate-900 mb-4">Sales Distribution by Product</h3>
-          <div className="w-full" style={{ minHeight: '300px' }}>
-            <ResponsiveContainer width="100%" height={300}>
+          <div className="w-full overflow-hidden" style={{ minHeight: '280px', maxHeight: '400px' }}>
+            <ResponsiveContainer width="100%" height={280}>
               <PieChart>
                 <Pie
                   data={salesDistribution}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name, percent }) => {
-                    // Show shortened labels or just percentage
-                    const productName = name || 'Unknown';
-                    const shortName = productName.length > 15 ? productName.substring(0, 12) + '...' : productName;
-                    return `${shortName}: ${percent ? (percent * 100).toFixed(0) : 0}%`;
-                  }}
-                  outerRadius="70%"
-                  innerRadius="30%"
+                  label={windowWidth > 640 ? ({ percent }) => {
+                    // Show percentage on larger screens
+                    return `${percent ? (percent * 100).toFixed(0) : 0}%`;
+                  } : false}
+                  outerRadius={windowWidth > 1024 ? "65%" : windowWidth > 640 ? "60%" : "55%"}
+                  innerRadius="25%"
                   fill="#8884d8"
                   dataKey="value"
                   paddingAngle={2}
@@ -207,9 +219,12 @@ export default function RevenueCharts({ sales, globalCurrency }: RevenueChartsPr
                 <Legend 
                   verticalAlign="bottom" 
                   height={36}
+                  wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }}
                   formatter={(value) => {
                     const item = salesDistribution.find(d => d.name === value);
-                    return `${value || 'Unknown'} (${formatCurrency(item?.value || 0, globalCurrency, true)})`;
+                    const name = value || 'Unknown';
+                    const shortName = name.length > 20 ? name.substring(0, 17) + '...' : name;
+                    return `${shortName} (${formatCurrency(item?.value || 0, globalCurrency, true)})`;
                   }}
                 />
               </PieChart>
@@ -219,14 +234,14 @@ export default function RevenueCharts({ sales, globalCurrency }: RevenueChartsPr
           <div className="mt-4 space-y-2 lg:hidden">
             {salesDistribution.map((item, index) => (
               <div key={index} className="flex items-center justify-between p-2 bg-slate-50 rounded">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
                   <div 
-                    className="w-4 h-4 rounded"
+                    className="w-4 h-4 rounded flex-shrink-0"
                     style={{ backgroundColor: COLORS[index % COLORS.length] }}
                   />
-                  <span className="text-sm font-medium text-slate-900">{item.name}</span>
+                  <span className="text-sm font-medium text-slate-900 truncate">{item.name}</span>
                 </div>
-                <span className="text-sm font-semibold text-slate-700">
+                <span className="text-sm font-semibold text-slate-700 ml-2 flex-shrink-0">
                   {formatCurrency(item.value, globalCurrency)}
                 </span>
               </div>
@@ -235,9 +250,10 @@ export default function RevenueCharts({ sales, globalCurrency }: RevenueChartsPr
         </div>
 
         {/* Profit Margins Bar Chart */}
-        <div className="card p-6">
+        <div className="card p-4 sm:p-6 overflow-hidden">
           <h3 className="text-lg font-semibold text-slate-900 mb-4">Profit Margins by Month</h3>
-          <ResponsiveContainer width="100%" height={300}>
+          <div className="w-full overflow-x-auto">
+            <ResponsiveContainer width="100%" height={300} minHeight={250}>
             <BarChart data={profitMargins}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis 
@@ -271,7 +287,8 @@ export default function RevenueCharts({ sales, globalCurrency }: RevenueChartsPr
               />
               <Bar dataKey="margin" fill="#10b981" name="Profit Margin %" />
             </BarChart>
-          </ResponsiveContainer>
+            </ResponsiveContainer>
+          </div>
         </div>
       </div>
     </div>

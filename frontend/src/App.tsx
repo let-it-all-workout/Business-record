@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Product, Sale, StockHistory, StockBatch, GoodsInventory } from './types';
 import { dataService } from './utils/dataService';
 import { exportProductsToCSV, exportSalesToCSV, exportInventoryToCSV } from './utils/export';
@@ -72,6 +72,8 @@ function App() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [globalSearchQuery, setGlobalSearchQuery] = useState<string>('');
+  const [showMobileSearch, setShowMobileSearch] = useState<boolean>(false);
+  const mobileSearchRef = useRef<HTMLDivElement>(null);
   const [revenueViewMode, setRevenueViewMode] = useState<'overall' | 'yearly'>('overall');
   const [showSettings, setShowSettings] = useState(false);
   const [showUserManagement, setShowUserManagement] = useState(false);
@@ -154,6 +156,26 @@ function App() {
       loadBusinesses();
     }
   }, [isSuperAdmin, isAuthenticated]);
+
+  // Close mobile search when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (mobileSearchRef.current && !mobileSearchRef.current.contains(event.target as Node)) {
+        // Check if the click is not on the search button
+        const searchButton = (event.target as HTMLElement).closest('button[title="Search"]');
+        if (!searchButton) {
+          setShowMobileSearch(false);
+        }
+      }
+    };
+
+    if (showMobileSearch) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [showMobileSearch]);
 
   useEffect(() => {
     // Wait for auth to finish loading first
@@ -745,7 +767,7 @@ function App() {
       )}
       
       {/* Professional Header Bar */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-sm safe-top">
+      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-sm safe-top relative">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
           <div className="flex items-center justify-between h-16 md:h-20">
             <div className="flex items-center gap-4 md:gap-8">
@@ -914,7 +936,48 @@ function App() {
                 </>
               )}
 
-              {/* Global Search Bar */}
+              {/* Mobile Search Button */}
+              <button
+                onClick={() => setShowMobileSearch(!showMobileSearch)}
+                className="md:hidden btn-icon"
+                title="Search"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </button>
+
+              {/* Mobile Search Bar (shown when button is clicked) */}
+              {showMobileSearch && (
+                <div ref={mobileSearchRef} className="md:hidden absolute top-full left-0 right-0 bg-white border-b border-slate-200 p-4 z-50 shadow-lg">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Search products..."
+                      value={globalSearchQuery}
+                      onChange={(e) => setGlobalSearchQuery(e.target.value)}
+                      className="pl-10 pr-10 py-2 w-full bg-white border border-slate-300 rounded-xl text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      autoFocus
+                    />
+                    <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <button
+                      onClick={() => {
+                        setGlobalSearchQuery('');
+                        setShowMobileSearch(false);
+                      }}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Desktop Search Bar */}
               <div className="hidden md:flex items-center gap-2">
                 <div className="relative">
                   <input

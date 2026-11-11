@@ -220,7 +220,7 @@ export default function SettingsPanel({
       if (response.ok) {
         const contentType = response.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
-          const data = await response.json().catch(() => ({}));
+          await response.json().catch(() => ({}));
           setPinSuccess('PIN set successfully!');
           setPinError('');
           setPin('');

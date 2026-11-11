@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { formatCurrency } from '../utils/format';
+import { roundMoney, wholeQuantity } from '../utils/saleMath';
 
 interface Good {
   name: string;
@@ -68,28 +70,28 @@ const CURRENCIES = [
   { code: 'NPR', symbol: 'Rs', name: 'Nepalese Rupee' },
 ];
 
-export default function AddGoodForm({ onSubmit, onCancel, globalCurrency: _globalCurrency }: AddGoodFormProps) {
+export default function AddGoodForm({ onSubmit, onCancel, globalCurrency }: AddGoodFormProps) {
   const [name, setName] = useState('');
   const [quantity, setQuantity] = useState('');
   const [unitPrice, setUnitPrice] = useState('');
-  const [currency, setCurrency] = useState('USD');
+  const [currency, setCurrency] = useState(globalCurrency || 'USD');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const quantityNum = parseInt(quantity, 10);
-    const priceNum = parseFloat(unitPrice);
+    const quantityNum = wholeQuantity(quantity);
+    const priceNum = Number(unitPrice);
 
     if (!name.trim()) {
       alert('Please enter a product name');
       return;
     }
 
-    if (isNaN(quantityNum) || quantityNum <= 0) {
-      alert('Please enter a valid quantity (greater than 0)');
+    if (!quantityNum) {
+      alert('Enter a whole number of units.');
       return;
     }
 
-    if (isNaN(priceNum) || priceNum < 0) {
+    if (!Number.isFinite(priceNum) || priceNum < 0) {
       alert('Please enter a valid unit price (0 or greater)');
       return;
     }
@@ -97,7 +99,7 @@ export default function AddGoodForm({ onSubmit, onCancel, globalCurrency: _globa
     onSubmit({
       name: name.trim(),
       quantity: quantityNum,
-      unitPrice: priceNum,
+      unitPrice: roundMoney(priceNum),
       currency,
     });
 
@@ -105,7 +107,7 @@ export default function AddGoodForm({ onSubmit, onCancel, globalCurrency: _globa
     setName('');
     setQuantity('');
     setUnitPrice('');
-    setCurrency('USD');
+    setCurrency(globalCurrency || 'USD');
   };
 
   return (
@@ -141,6 +143,7 @@ export default function AddGoodForm({ onSubmit, onCancel, globalCurrency: _globa
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-transparent"
               placeholder="Qty"
               min="1"
+              step="1"
               required
             />
           </div>
@@ -182,9 +185,9 @@ export default function AddGoodForm({ onSubmit, onCancel, globalCurrency: _globa
         </div>
         </div>
 
-        {quantity && unitPrice && (
+        {wholeQuantity(quantity) && Number.isFinite(Number(unitPrice)) && (
           <p className="text-xs text-gray-500">
-            Total: {CURRENCIES.find(c => c.code === currency)?.symbol || '$'}{(parseFloat(unitPrice || '0') * parseInt(quantity || '0', 10)).toFixed(2)} {currency}
+            Total: {formatCurrency(roundMoney((wholeQuantity(quantity) || 0) * Number(unitPrice)), currency)}
           </p>
         )}
       </div>

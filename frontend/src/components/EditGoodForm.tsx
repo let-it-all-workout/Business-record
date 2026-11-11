@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Good } from '../types';
+import { formatCurrency } from '../utils/format';
+import { roundMoney, wholeQuantity } from '../utils/saleMath';
 
 const CURRENCIES = [
   { code: 'USD', symbol: '$', name: 'US Dollar' },
@@ -80,26 +82,26 @@ export default function EditGoodForm({ good, onSubmit, onCancel, globalCurrency:
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const quantityNum = parseInt(quantity, 10);
-    const remainingNum = parseInt(remainingQuantity, 10);
-    const priceNum = parseFloat(unitPrice);
+    const quantityNum = wholeQuantity(quantity);
+    const remainingNum = wholeQuantity(remainingQuantity, 0);
+    const priceNum = Number(unitPrice);
 
     if (!name.trim()) {
       alert('Please enter a product name');
       return;
     }
 
-    if (isNaN(quantityNum) || quantityNum <= 0) {
-      alert('Please enter a valid quantity (greater than 0)');
+    if (!quantityNum) {
+      alert('Enter a whole number of units.');
       return;
     }
 
-    if (isNaN(remainingNum) || remainingNum < 0 || remainingNum > quantityNum) {
-      alert(`Please enter a valid remaining quantity (0 to ${quantityNum})`);
+    if (remainingNum === null || remainingNum > quantityNum) {
+      alert(`Enter a whole remaining quantity from 0 to ${quantityNum}.`);
       return;
     }
 
-    if (isNaN(priceNum) || priceNum < 0) {
+    if (!Number.isFinite(priceNum) || priceNum < 0) {
       alert('Please enter a valid unit price (0 or greater)');
       return;
     }
@@ -112,7 +114,7 @@ export default function EditGoodForm({ good, onSubmit, onCancel, globalCurrency:
       name: name.trim(),
       quantity: quantityNum,
       remainingQuantity: finalRemaining, // Balance: ensure remaining <= total
-      unitPrice: priceNum,
+      unitPrice: roundMoney(priceNum),
       currency,
     });
   };
@@ -208,9 +210,9 @@ export default function EditGoodForm({ good, onSubmit, onCancel, globalCurrency:
           </div>
         </div>
 
-        {unitPrice && remainingQuantity && (
+        {wholeQuantity(remainingQuantity, 0) !== null && Number.isFinite(Number(unitPrice)) && (
           <p className="text-xs text-gray-500">
-            Total Value: {CURRENCIES.find(c => c.code === currency)?.symbol || '$'}{(parseFloat(unitPrice || '0') * parseInt(remainingQuantity || '0', 10)).toFixed(2)} {currency}
+            Total Value: {formatCurrency(roundMoney((wholeQuantity(remainingQuantity, 0) || 0) * Number(unitPrice)), currency)}
           </p>
         )}
       </div>

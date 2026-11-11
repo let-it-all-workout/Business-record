@@ -1,7 +1,8 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Sale } from '../types';
 import { formatCurrency } from '../utils/format';
+import { saleProfit, saleRevenue } from '../utils/saleMath';
 
 interface RevenueChartsProps {
   sales: Sale[];
@@ -25,7 +26,7 @@ export default function RevenueCharts({ sales, globalCurrency }: RevenueChartsPr
   }, []);
 
   // Filter valid sales
-  const validSales = sales.filter(s => s && s !== null);
+  const validSales = sales.filter((s) => s && (s.currency || globalCurrency) === globalCurrency);
 
   if (validSales.length === 0) {
     return null;
@@ -45,10 +46,8 @@ export default function RevenueCharts({ sales, globalCurrency }: RevenueChartsPr
       })
       .forEach(s => {
         const date = new Date(s.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        const refundedQty = s.refundedQuantity || 0;
-        const effectiveQty = s.quantity - refundedQty;
-        const revenue = effectiveQty * s.sellingPrice;
-        const profit = s.profit || 0;
+        const revenue = saleRevenue(s);
+        const profit = saleProfit(s);
 
         if (!dailyData[date]) {
           dailyData[date] = { revenue: 0, profit: 0, date };
@@ -67,10 +66,7 @@ export default function RevenueCharts({ sales, globalCurrency }: RevenueChartsPr
     const productRevenue: Record<string, number> = {};
     
     validSales.forEach(s => {
-      const refundedQty = s.refundedQuantity || 0;
-      const effectiveQty = s.quantity - refundedQty;
-      const revenue = effectiveQty * s.sellingPrice;
-      productRevenue[s.productName] = (productRevenue[s.productName] || 0) + revenue;
+      productRevenue[s.productName] = (productRevenue[s.productName] || 0) + saleRevenue(s);
     });
 
     return Object.entries(productRevenue)
@@ -86,10 +82,8 @@ export default function RevenueCharts({ sales, globalCurrency }: RevenueChartsPr
     validSales.forEach(s => {
       const saleDate = new Date(s.date);
       const month = saleDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-      const refundedQty = s.refundedQuantity || 0;
-      const effectiveQty = s.quantity - refundedQty;
-      const revenue = effectiveQty * s.sellingPrice;
-      const profit = s.profit || 0;
+      const revenue = saleRevenue(s);
+      const profit = saleProfit(s);
 
       if (!monthlyData[month]) {
         monthlyData[month] = { revenue: 0, profit: 0, month };

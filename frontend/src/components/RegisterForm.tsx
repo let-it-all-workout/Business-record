@@ -46,7 +46,7 @@ export default function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () 
         throw new Error(errorData.error || 'Registration failed');
       }
 
-      const data = await response.json();
+      await response.json();
       
       // Auto-login after successful registration
       await login({

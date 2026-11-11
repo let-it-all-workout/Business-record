@@ -3,7 +3,8 @@ import { Product, Sale, StockHistory, StockBatch, GoodsInventory } from './types
 import { dataService } from './utils/dataService';
 import { exportProductsToCSV, exportSalesToCSV, exportInventoryToCSV } from './utils/export';
 import { checkInventoryAlerts } from './utils/alerts';
-import { formatNumber } from './utils/format';
+import { formatCurrency, formatNumber } from './utils/format';
+import { marginPercent, roundMoney, saleProfit, saleRevenue } from './utils/saleMath';
 import ProductForm from './components/ProductForm';
 import GoodsInventoryForm from './components/GoodsInventoryForm';
 import BulkProductForm from './components/BulkProductForm';
@@ -49,7 +50,6 @@ function App() {
   const [selectedBusinessId, setSelectedBusinessId] = useState<string | null>(
     localStorage.getItem('selected_business_id')
   );
-  const [showSuperAdminPanel, setShowSuperAdminPanel] = useState(false);
   const [businesses, setBusinesses] = useState<any[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
@@ -488,22 +488,25 @@ function App() {
       });
     });
 
-    // Calculate profit from batches (weighted average purchase price)
-    const totalPurchaseCost = batchDetails.reduce((sum, batch) => 
+    if (remainingToSell > 0 || batchDetails.length === 0) {
+      alert('Stock batches do not cover this quantity. Add stock before selling.');
+      return;
+    }
+
+    const totalPurchaseCost = batchDetails.reduce((sum, batch) =>
       sum + (batch.quantity * batch.purchasePrice), 0
     );
-    const profit = (sellingPrice * quantity) - totalPurchaseCost;
+    const purchasePrice = roundMoney(totalPurchaseCost / quantity);
+    const profit = roundMoney((sellingPrice * quantity) - totalPurchaseCost);
 
-    // Create sale record with batch details
-    // Note: For batch-based products, we'll use USD as default currency
     const newSale: Omit<Sale, 'id' | 'date'> = {
       productId,
       productName: product.name,
       quantity,
       sellingPrice,
-      purchasePrice: totalPurchaseCost / quantity, // Average purchase price
+      purchasePrice,
       profit,
-      currency: 'USD', // Default for batch-based products
+      currency: globalCurrency,
       refunded: false,
       refundedQuantity: 0,
       batchDetails,
@@ -522,7 +525,7 @@ function App() {
       _setSelectedProductForSale(null);
       
       // Show success message
-      setSuccessMessage(`Sale recorded successfully! ${quantity} units of ${product.name} sold for $${(quantity * sellingPrice).toFixed(2)} (Profit: $${profit.toFixed(2)})`);
+      setSuccessMessage(`Sale recorded. ${quantity} units of ${product.name} sold for ${formatCurrency(quantity * sellingPrice, globalCurrency)} (profit ${formatCurrency(profit, globalCurrency)}).`);
     } catch (error) {
       console.error('Error recording sale:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to record sale';
@@ -664,34 +667,20 @@ function App() {
   }, [sales, revenueViewMode]);
 
   // Calculate statistics - count products from all inventories
-  const totalProducts = goodsInventories.reduce((sum, inv) => sum + inv.goods.length, 0);
-  const totalStock = goodsInventories.reduce((sum, inv) => 
-    sum + inv.goods.reduce((invSum, good) => invSum + good.remainingQuantity, 0), 0
+  const goodsCount = goodsInventories.reduce((sum, inv) => sum + inv.goods.length, 0);
+  const goodsStock = goodsInventories.reduce((sum, inv) =>
+    sum + inv.goods.reduce((goodSum, good) => goodSum + (Number(good.remainingQuantity) || 0), 0), 0
   );
+  const totalProducts = products.length + goodsCount;
+  const totalStock = products.reduce((sum, product) => sum + (Number(product.quantity) || 0), 0) + goodsStock;
   const totalInventories = goodsInventories.length;
-  const totalSales = sales.length;
-  
-  // Calculate revenue and profit accounting for refunds
-  // Revenue: Only count non-refunded sales (using filtered sales based on view mode)
-  const totalRevenue = getFilteredSales.reduce((sum, sale) => {
-    const refundedQty = sale.refundedQuantity || 0;
-    const effectiveQty = sale.quantity - refundedQty;
-    return sum + (effectiveQty * sale.sellingPrice);
-  }, 0);
-  
-  // Profit: Use recalculated profit from database (already accounts for refunds)
-  // Ensure we only count profit from valid sales and handle null/undefined cases
-  const totalProfit = getFilteredSales.reduce((sum, sale) => {
-    // The sale.profit is already recalculated in the database to reflect refunds
-    // Handle cases where profit might be null, undefined, or NaN
-    const profit = sale.profit;
-    if (profit === null || profit === undefined || isNaN(profit)) {
-      return sum;
-    }
-    return sum + Number(profit);
-  }, 0);
-  
-  const currencySymbol = CURRENCIES.find(c => c.code === globalCurrency)?.symbol || '$';
+
+  // Add only sales in the business currency. Mixing currencies would make the total meaningless.
+  const moneySales = getFilteredSales.filter((sale) => (sale.currency || globalCurrency) === globalCurrency);
+  const otherCurrencyCount = getFilteredSales.length - moneySales.length;
+  const totalRevenue = moneySales.reduce((sum, sale) => sum + saleRevenue(sale), 0);
+  const totalProfit = moneySales.reduce((sum, sale) => sum + saleProfit(sale), 0);
+  const profitMargin = marginPercent(totalProfit, totalRevenue);
 
   // Show loading state
   // Skip loading screen if: auth is loading OR super admin viewing business list
@@ -1164,12 +1153,12 @@ function App() {
                     </button>
                   </div>
                 </div>
-                <p className="stat-value break-words min-w-0">{currencySymbol}{totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                <p className="stat-value break-words min-w-0">{formatCurrency(totalRevenue, globalCurrency)}</p>
                 <p className="text-sm text-slate-500 mt-1">
-                  {revenueViewMode === 'yearly' 
-                    ? `${getFilteredSales.length} transactions this year`
-                    : `${totalSales} transactions`
-                  }
+                  {revenueViewMode === 'yearly'
+                    ? `${moneySales.length} transactions this year`
+                    : `${moneySales.length} transactions`}
+                  {otherCurrencyCount > 0 ? ` · ${otherCurrencyCount} in another currency not included` : ''}
                 </p>
               </div>
               <div className="p-3 bg-slate-100 rounded-lg">
@@ -1195,12 +1184,12 @@ function App() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
                       </svg>
                     )}
-                    <span className="break-words min-w-0">{currencySymbol}{totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="break-words min-w-0">{formatCurrency(totalProfit, globalCurrency)}</span>
                   </p>
-                  <p className={`text-sm mt-1 flex items-center gap-1 ${totalRevenue > 0 && ((totalProfit / totalRevenue) * 100) >= 0 ? 'text-emerald-600' : totalRevenue > 0 ? 'text-red-600' : 'text-slate-500'}`}>
+                  <p className={`text-sm mt-1 flex items-center gap-1 ${totalRevenue > 0 && profitMargin >= 0 ? 'text-emerald-600' : totalRevenue > 0 ? 'text-red-600' : 'text-slate-500'}`}>
                     {totalRevenue > 0 ? (
                       <>
-                        {((totalProfit / totalRevenue) * 100) >= 0 ? (
+                        {profitMargin >= 0 ? (
                           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                           </svg>
@@ -1209,7 +1198,7 @@ function App() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
                           </svg>
                         )}
-                        {((totalProfit / totalRevenue) * 100).toFixed(1)}% margin
+                        {profitMargin.toFixed(1)}% margin
                       </>
                     ) : (
                       'No sales yet'
@@ -1400,7 +1389,7 @@ function App() {
                       globalCurrency={globalCurrency}
                       searchQuery={globalSearchQuery}
                       sales={sales.filter(s => s.goodId && s.inventoryId === inventory.id)}
-                      onRecordSale={async (inventoryId, goodId, quantity, sellingPrice, purchasePrice, profit) => {
+                      onRecordSale={async (inventoryId, goodId, quantity, sellingPrice, purchasePrice, _profit) => {
                         // Create sale record
                         const inventory = goodsInventories.find(inv => inv.id === inventoryId);
                         const good = inventory?.goods.find(g => g.id === goodId);
@@ -1413,8 +1402,8 @@ function App() {
                             quantity,
                             sellingPrice,
                             purchasePrice,
-                            profit,
-                            currency: globalCurrency,
+                            profit: roundMoney((sellingPrice - purchasePrice) * quantity),
+                            currency: good.currency || globalCurrency,
                             refunded: false,
                             refundedQuantity: 0,
                             batchDetails: [],
@@ -1430,7 +1419,7 @@ function App() {
                             setSales(updatedSales);
                             setGoodsInventories(updatedInventories);
                             
-                            setSuccessMessage(`Sale recorded successfully! ${quantity} units of ${good.name} sold.`);
+                            setSuccessMessage(`Sale recorded. ${quantity} units of ${good.name} sold for ${formatCurrency(quantity * sellingPrice, good.currency || globalCurrency)}.`);
                           } catch (error) {
                             console.error('Error recording goods inventory sale:', error);
                             const errorMessage = error instanceof Error ? error.message : 'Failed to record sale';
@@ -1478,6 +1467,7 @@ function App() {
               <div className="mb-6">
                 <SalesForm
                   products={products.filter(p => p.quantity > 0)}
+                  currency={globalCurrency}
                   onSubmit={handleRecordSale}
                   onCancel={handleCancel}
                 />
@@ -1488,6 +1478,7 @@ function App() {
               <div className="mb-6">
                 <AddStockForm
                   products={products}
+                  currency={globalCurrency}
                   onSubmit={handleAddStock}
                   onCancel={handleCancel}
                 />

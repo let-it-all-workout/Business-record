@@ -20,9 +20,6 @@ export function formatCurrency(
   currency: string = 'USD',
   showSymbol: boolean = true
 ): string {
-  const numValue = typeof amount === 'string' ? parseFloat(amount) : amount;
-  if (isNaN(numValue)) return showSymbol ? '$0.00' : '0.00';
-
   const currencySymbols: Record<string, string> = {
     'USD': '$', 'EUR': '€', 'GBP': '£', 'NGN': '₦', 'KES': 'KSh',
     'GHS': '₵', 'ZAR': 'R', 'INR': '₹', 'CNY': '¥', 'JPY': '¥',
@@ -37,7 +34,9 @@ export function formatCurrency(
     'LKR': 'Rs', 'NPR': 'Rs',
   };
 
-  const symbol = currencySymbols[currency] || '$';
+  const numValue = typeof amount === 'string' ? parseFloat(amount) : amount;
+  const symbol = currencySymbols[currency] || currency || '$';
+  if (!Number.isFinite(numValue)) return showSymbol ? `${symbol}0.00` : '0.00';
   const formatted = numValue.toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Sale, Product } from '../types';
 import { formatCurrency } from '../utils/format';
+import { effectiveQuantity, marginPercent, saleProfit, saleRevenue } from '../utils/saleMath';
 
 interface AdvancedAnalyticsProps {
   sales: Sale[];
@@ -9,7 +10,7 @@ interface AdvancedAnalyticsProps {
 }
 
 export default function AdvancedAnalytics({ sales, products, globalCurrency }: AdvancedAnalyticsProps) {
-  const validSales = sales.filter(s => s && s !== null);
+  const validSales = sales.filter((s) => s && (s.currency || globalCurrency) === globalCurrency);
 
   // Sales Forecasting (Simple linear trend)
   const salesForecast = useMemo(() => {
@@ -22,14 +23,10 @@ export default function AdvancedAnalytics({ sales, products, globalCurrency }: A
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         return saleDate >= thirtyDaysAgo;
       })
-      .map(s => {
-        const refundedQty = s.refundedQuantity || 0;
-        const effectiveQty = s.quantity - refundedQty;
-        return {
-          date: new Date(s.date).getTime(),
-          revenue: effectiveQty * s.sellingPrice,
-        };
-      })
+      .map(s => ({
+        date: new Date(s.date).getTime(),
+        revenue: saleRevenue(s),
+      }))
       .sort((a, b) => a.date - b.date);
 
     if (last30Days.length < 2) return null;
@@ -97,11 +94,7 @@ export default function AdvancedAnalytics({ sales, products, globalCurrency }: A
 
     validSales.forEach(s => {
       const month = new Date(s.date).toLocaleDateString('en-US', { month: 'long' });
-      const refundedQty = s.refundedQuantity || 0;
-      const effectiveQty = s.quantity - refundedQty;
-      const revenue = effectiveQty * s.sellingPrice;
-
-      monthlyRevenue[month] = (monthlyRevenue[month] || 0) + revenue;
+      monthlyRevenue[month] = (monthlyRevenue[month] || 0) + saleRevenue(s);
     });
 
     return Object.entries(monthlyRevenue)
@@ -118,24 +111,22 @@ export default function AdvancedAnalytics({ sales, products, globalCurrency }: A
     const performance: Record<string, { revenue: number; profit: number; quantity: number }> = {};
 
     validSales.forEach(s => {
-      const refundedQty = s.refundedQuantity || 0;
-      const effectiveQty = s.quantity - refundedQty;
-      const revenue = effectiveQty * s.sellingPrice;
-      const profit = s.profit || 0;
+      const revenue = saleRevenue(s);
+      const profit = saleProfit(s);
 
       if (!performance[s.productName]) {
         performance[s.productName] = { revenue: 0, profit: 0, quantity: 0 };
       }
       performance[s.productName].revenue += revenue;
       performance[s.productName].profit += profit;
-      performance[s.productName].quantity += effectiveQty;
+      performance[s.productName].quantity += effectiveQuantity(s);
     });
 
     const sorted = Object.entries(performance)
       .map(([name, data]) => ({
         name,
         ...data,
-        margin: data.revenue > 0 ? (data.profit / data.revenue) * 100 : 0,
+        margin: marginPercent(data.profit, data.revenue),
       }))
       .sort((a, b) => b.revenue - a.revenue);
 

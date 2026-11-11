@@ -4,21 +4,9 @@ import AddGoodForm from './AddGoodForm';
 import EditGoodForm from './EditGoodForm';
 import SaleGoodForm from './SaleGoodForm';
 import { formatCurrency, formatNumber } from '../utils/format';
+import { roundMoney } from '../utils/saleMath';
 import { useAuth } from '../contexts/AuthContext';
 import PINVerification from './PINVerification';
-
-const CURRENCIES = [
-  { code: 'USD', symbol: '$', name: 'US Dollar' },
-  { code: 'EUR', symbol: '€', name: 'Euro' },
-  { code: 'GBP', symbol: '£', name: 'British Pound' },
-  { code: 'NGN', symbol: '₦', name: 'Nigerian Naira' },
-  { code: 'KES', symbol: 'KSh', name: 'Kenyan Shilling' },
-  { code: 'GHS', symbol: '₵', name: 'Ghanaian Cedi' },
-  { code: 'ZAR', symbol: 'R', name: 'South African Rand' },
-  { code: 'INR', symbol: '₹', name: 'Indian Rupee' },
-  { code: 'CNY', symbol: '¥', name: 'Chinese Yuan' },
-  { code: 'JPY', symbol: '¥', name: 'Japanese Yen' },
-];
 
 interface GoodsInventorySectionProps {
   inventory: GoodsInventory;
@@ -49,7 +37,7 @@ export default function GoodsInventorySection({ inventory, onUpdate, onDelete, o
       // Calculate from actual sales records
       const totalSold = goodSales.reduce((total, sale) => {
         const refunded = sale.refundedQuantity || 0;
-        const effectiveSold = sale.quantity - refunded;
+        const effectiveSold = Math.max(0, sale.quantity - refunded);
         return total + effectiveSold;
       }, 0);
       
@@ -97,8 +85,7 @@ export default function GoodsInventorySection({ inventory, onUpdate, onDelete, o
     setShowAddGoodForm(false);
     
     // Show success message
-    const currencySymbol = CURRENCIES.find(c => c.code === globalCurrency)?.symbol || '$';
-    alert(`Product "${goodData.name}" added successfully!\n${goodData.quantity} units @ ${currencySymbol}${Number(goodData.unitPrice || 0).toFixed(2)} ${globalCurrency} per unit`);
+    alert(`Product "${goodData.name}" added successfully!\n${goodData.quantity} units @ ${formatCurrency(Number(goodData.unitPrice || 0), goodData.currency || globalCurrency)} per unit`);
   };
 
   const handleEditGood = (updatedGood: Good) => {
@@ -121,7 +108,7 @@ export default function GoodsInventorySection({ inventory, onUpdate, onDelete, o
     }
     
     // Calculate profit
-    const profit = (sellingPrice - sellingGood.unitPrice) * quantity;
+    const profit = roundMoney((sellingPrice - sellingGood.unitPrice) * quantity);
     
     // Note: We don't update local state here anymore - the server will update the database
     // and we'll reload from the database after the sale is created

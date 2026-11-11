@@ -1,19 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Sale } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-
-const CURRENCIES = [
-  { code: 'USD', symbol: '$', name: 'US Dollar' },
-  { code: 'EUR', symbol: '€', name: 'Euro' },
-  { code: 'GBP', symbol: '£', name: 'British Pound' },
-  { code: 'NGN', symbol: '₦', name: 'Nigerian Naira' },
-  { code: 'KES', symbol: 'KSh', name: 'Kenyan Shilling' },
-  { code: 'GHS', symbol: '₵', name: 'Ghanaian Cedi' },
-  { code: 'ZAR', symbol: 'R', name: 'South African Rand' },
-  { code: 'INR', symbol: '₹', name: 'Indian Rupee' },
-  { code: 'CNY', symbol: '¥', name: 'Chinese Yuan' },
-  { code: 'JPY', symbol: '¥', name: 'Japanese Yen' },
-];
+import { formatCurrency } from '../utils/format';
+import { marginPercent, roundMoney, wholeQuantity } from '../utils/saleMath';
 
 interface EditSaleFormProps {
   sale: Sale;
@@ -35,12 +24,12 @@ export default function EditSaleForm({ sale, onSubmit, onCancel, globalCurrency:
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const quantityNum = parseInt(quantity, 10);
-    const priceNum = parseFloat(sellingPrice);
+    const quantityNum = wholeQuantity(quantity);
+    const priceNum = Number(sellingPrice);
     const refundedQty = sale.refundedQuantity || 0;
 
-    if (isNaN(quantityNum) || quantityNum <= 0) {
-      alert('Please enter a valid quantity (greater than 0)');
+    if (!quantityNum) {
+      alert('Enter a whole number of units.');
       return;
     }
 
@@ -50,20 +39,19 @@ export default function EditSaleForm({ sale, onSubmit, onCancel, globalCurrency:
       return;
     }
 
-    if (isNaN(priceNum) || priceNum < 0) {
+    if (!Number.isFinite(priceNum) || priceNum < 0) {
       alert('Please enter a valid selling price (0 or greater)');
       return;
     }
 
-    // Recalculate profit - account for refunded quantities
-    // Profit should only be calculated for non-refunded quantity
     const effectiveQuantity = quantityNum - refundedQty;
-    const profit = (priceNum - sale.purchasePrice) * effectiveQuantity;
+    const selling = roundMoney(priceNum);
+    const profit = roundMoney(effectiveQuantity * (selling - sale.purchasePrice));
 
     const updatedSale: Sale = {
       ...sale,
       quantity: quantityNum,
-      sellingPrice: priceNum,
+      sellingPrice: selling,
       profit,
     };
 
@@ -72,11 +60,14 @@ export default function EditSaleForm({ sale, onSubmit, onCancel, globalCurrency:
 
   // Calculate profit accounting for refunds
   const refundedQty = sale.refundedQuantity || 0;
-  const quantityNum = quantity ? parseInt(quantity, 10) : sale.quantity;
-  const effectiveQuantity = Math.max(0, quantityNum - refundedQty);
-  const profit = sellingPrice && quantity 
-    ? (parseFloat(sellingPrice) - sale.purchasePrice) * effectiveQuantity
+  const quantityNum = wholeQuantity(quantity);
+  const priceNum = Number(sellingPrice);
+  const effectiveQuantity = quantityNum ? Math.max(0, quantityNum - refundedQty) : 0;
+  const revenue = quantityNum && Number.isFinite(priceNum) ? roundMoney(effectiveQuantity * priceNum) : 0;
+  const profit = quantityNum && Number.isFinite(priceNum)
+    ? roundMoney(effectiveQuantity * (priceNum - sale.purchasePrice))
     : 0;
+  const profitMargin = marginPercent(profit, revenue);
 
   return (
     <form onSubmit={handleSubmit} className="bg-white p-4 rounded-lg border border-blue-200">
@@ -89,9 +80,11 @@ export default function EditSaleForm({ sale, onSubmit, onCancel, globalCurrency:
         <p className="text-sm text-gray-700">
           <span className="font-medium">Original Sale Date:</span> {new Date(sale.date).toLocaleDateString()}
         </p>
-        <p className="text-sm text-gray-700">
-          <span className="font-medium">Purchase Price:</span> {CURRENCIES.find(c => c.code === sale.currency)?.symbol || '$'}{sale.purchasePrice.toFixed(2)} {sale.currency}/unit
-        </p>
+        {canSeeFinancial && (
+          <p className="text-sm text-gray-700">
+            <span className="font-medium">Purchase Price:</span> {formatCurrency(sale.purchasePrice, sale.currency)}/unit
+          </p>
+        )}
         <p className="text-sm text-gray-700">
           <span className="font-medium">Currency:</span> {sale.currency}
         </p>
@@ -110,6 +103,7 @@ export default function EditSaleForm({ sale, onSubmit, onCancel, globalCurrency:
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="Enter quantity"
             min="1"
+            step="1"
             required
           />
         </div>
@@ -129,16 +123,17 @@ export default function EditSaleForm({ sale, onSubmit, onCancel, globalCurrency:
             step="0.01"
             required
           />
-          {sellingPrice && quantity && (
+          {quantityNum && Number.isFinite(priceNum) && (
             <div className="mt-2 space-y-1">
               <p className="text-xs text-gray-600">
-                Total Sale: {CURRENCIES.find(c => c.code === sale.currency)?.symbol || '$'}{(parseFloat(sellingPrice || '0') * parseInt(quantity || '0', 10)).toFixed(2)} {sale.currency}
+                Total still sold: {formatCurrency(revenue, sale.currency)}
                 {refundedQty > 0 && (
                   <span className="text-amber-600 ml-1">
-                    ({effectiveQuantity} effective after {refundedQty} refunded)
+                    ({effectiveQuantity} left after {refundedQty} refunded)
                   </span>
                 )}
               </p>
+              {canSeeFinancial && (
               <p className={`text-xs font-medium flex items-center gap-1 ${
                 profit >= 0 ? 'text-green-600' : 'text-red-600'
               }`}>
@@ -151,13 +146,14 @@ export default function EditSaleForm({ sale, onSubmit, onCancel, globalCurrency:
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
                   </svg>
                 )}
-                Profit: {CURRENCIES.find(c => c.code === sale.currency)?.symbol || '$'}{profit.toFixed(2)} {sale.currency}
-                {effectiveQuantity > 0 && (
+                Profit: {formatCurrency(profit, sale.currency)}
+                {revenue > 0 && (
                   <span className={profit >= 0 ? 'text-green-600' : 'text-red-600'}>
-                    ({profit >= 0 ? '+' : ''}{((profit / (sale.purchasePrice * effectiveQuantity)) * 100).toFixed(1)}%)
+                    ({profit >= 0 ? '+' : ''}{profitMargin.toFixed(1)}% margin)
                   </span>
                 )}
               </p>
+              )}
             </div>
           )}
         </div>

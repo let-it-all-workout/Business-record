@@ -1,4 +1,5 @@
 import { Product, Sale, GoodsInventory } from '../types';
+import { marginPercent, saleProfit, saleRevenue } from '../utils/saleMath';
 
 interface SmartInsightsProps {
   products: Product[];
@@ -8,29 +9,19 @@ interface SmartInsightsProps {
   currencySymbol: string;
 }
 
-export default function SmartInsights({ products, sales, inventories: _inventories, currency: _currency, currencySymbol }: SmartInsightsProps) {
-  // Calculate revenue and profit accounting for refunds
-  const totalRevenue = sales.reduce((sum, sale) => {
-    const refundedQty = sale.refundedQuantity || 0;
-    const effectiveQty = sale.quantity - refundedQty;
-    return sum + (effectiveQty * sale.sellingPrice);
-  }, 0);
-  
-  // Profit: Use recalculated profit from database (already accounts for refunds)
-  const totalProfit = sales.reduce((sum, sale) => {
-    return sum + (sale.profit || 0);
-  }, 0);
-  
-  const avgProfitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+export default function SmartInsights({ products, sales, inventories: _inventories, currency, currencySymbol }: SmartInsightsProps) {
+  const moneySales = sales.filter((sale) => (sale.currency || currency) === currency);
+  const totalRevenue = moneySales.reduce((sum, sale) => sum + saleRevenue(sale), 0);
+  const totalProfit = moneySales.reduce((sum, sale) => sum + saleProfit(sale), 0);
+  const avgProfitMargin = marginPercent(totalProfit, totalRevenue);
   
   const lowStockProducts = products.filter(p => p.quantity < 10 && p.quantity > 0);
   const outOfStockProducts = products.filter(p => p.quantity === 0);
   
-  const topSellingProducts = sales
+  const topSellingProducts = moneySales
     .reduce((acc, sale) => {
-      const refundedQty = sale.refundedQuantity || 0;
-      const effectiveQty = sale.quantity - refundedQty;
-      const effectiveRevenue = effectiveQty * sale.sellingPrice;
+      const effectiveQty = Math.max(0, (Number(sale.quantity) || 0) - (Number(sale.refundedQuantity) || 0));
+      const effectiveRevenue = saleRevenue(sale);
       
       const existing = acc.find(item => item.productId === sale.productId);
       if (existing) {

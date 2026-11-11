@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Sale, Product, GoodsInventory } from '../types';
 import { formatCurrency, formatNumber } from './format';
+import { effectiveQuantity, marginPercent, roundMoney, saleProfit, saleRevenue } from './saleMath';
 
 interface ReportOptions {
   title: string;
@@ -34,17 +35,11 @@ export function generateSalesReport(
 
   // Summary statistics
   const validSales = sales.filter(s => s && s !== null);
-  const totalRevenue = validSales.reduce((sum, s) => {
-    const refundedQty = s.refundedQuantity || 0;
-    const effectiveQty = s.quantity - refundedQty;
-    return sum + (effectiveQty * s.sellingPrice);
-  }, 0);
-  
-  const totalProfit = validSales.reduce((sum, s) => sum + (s.profit || 0), 0);
-  const totalItems = validSales.reduce((sum, s) => {
-    const refundedQty = s.refundedQuantity || 0;
-    return sum + (s.quantity - refundedQty);
-  }, 0);
+  const reportSales = validSales.filter((s) => (s.currency || options.currency) === options.currency);
+  const otherCurrencyCount = validSales.length - reportSales.length;
+  const totalRevenue = reportSales.reduce((sum, s) => sum + saleRevenue(s), 0);
+  const totalProfit = reportSales.reduce((sum, s) => sum + saleProfit(s), 0);
+  const totalItems = reportSales.reduce((sum, s) => sum + effectiveQuantity(s), 0);
 
   doc.setFontSize(12);
   doc.text('Summary', 14, 50);
@@ -52,26 +47,26 @@ export function generateSalesReport(
   doc.text(`Total Revenue: ${formatCurrency(totalRevenue, options.currency)}`, 14, 60);
   doc.text(`Total Profit: ${formatCurrency(totalProfit, options.currency)}`, 14, 65);
   doc.text(`Total Items Sold: ${formatNumber(totalItems)}`, 14, 70);
-  doc.text(`Number of Sales: ${validSales.length}`, 14, 75);
+  doc.text(`Number of Sales: ${reportSales.length}`, 14, 75);
+  if (otherCurrencyCount > 0) {
+    doc.text(`${otherCurrencyCount} sale(s) in another currency are listed below and excluded from these totals.`, 14, 80);
+  }
 
-  // Sales table
   const tableData = validSales.map(sale => {
-    const refundedQty = sale.refundedQuantity || 0;
-    const effectiveQty = sale.quantity - refundedQty;
-    const totalAmount = effectiveQty * sale.sellingPrice;
+    const saleCurrency = sale.currency || options.currency;
     return [
       new Date(sale.date).toLocaleDateString(),
       sale.productName,
-      formatNumber(effectiveQty),
-      formatCurrency(sale.sellingPrice, options.currency),
-      formatCurrency(totalAmount, options.currency),
-      formatCurrency(sale.profit || 0, options.currency),
+      formatNumber(effectiveQuantity(sale)),
+      formatCurrency(sale.sellingPrice, saleCurrency),
+      formatCurrency(saleRevenue(sale), saleCurrency),
+      formatCurrency(saleProfit(sale), saleCurrency),
       sale.refunded ? 'Yes' : 'No'
     ];
   });
 
   autoTable(doc, {
-    startY: 85,
+    startY: otherCurrencyCount > 0 ? 88 : 85,
     head: [['Date', 'Product', 'Quantity', 'Unit Price', 'Total', 'Profit', 'Refunded']],
     body: tableData,
     theme: 'striped',
@@ -149,17 +144,13 @@ export function generateFinancialReport(
   doc.text(`Generated: ${new Date().toLocaleString()}`, pageWidth / 2, 30, { align: 'center' });
 
   const validSales = sales.filter(s => s && s !== null);
+  const reportSales = validSales.filter((s) => (s.currency || options.currency) === options.currency);
+  const otherCurrencyCount = validSales.length - reportSales.length;
   
-  // Calculate metrics
-  const totalRevenue = validSales.reduce((sum, s) => {
-    const refundedQty = s.refundedQuantity || 0;
-    const effectiveQty = s.quantity - refundedQty;
-    return sum + (effectiveQty * s.sellingPrice);
-  }, 0);
-  
-  const totalProfit = validSales.reduce((sum, s) => sum + (s.profit || 0), 0);
-  const totalCost = totalRevenue - totalProfit;
-  const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+  const totalRevenue = reportSales.reduce((sum, s) => sum + saleRevenue(s), 0);
+  const totalProfit = reportSales.reduce((sum, s) => sum + saleProfit(s), 0);
+  const totalCost = roundMoney(totalRevenue - totalProfit);
+  const profitMargin = marginPercent(totalProfit, totalRevenue);
 
   // Financial summary
   doc.setFontSize(12);
@@ -169,15 +160,15 @@ export function generateFinancialReport(
   doc.text(`Total Cost: ${formatCurrency(totalCost, options.currency)}`, 14, 65);
   doc.text(`Total Profit: ${formatCurrency(totalProfit, options.currency)}`, 14, 70);
   doc.text(`Profit Margin: ${profitMargin.toFixed(2)}%`, 14, 75);
+  if (otherCurrencyCount > 0) {
+    doc.text(`${otherCurrencyCount} sale(s) in another currency are excluded from these totals.`, 14, 80);
+  }
 
-  // Monthly breakdown
   const monthlyData: Record<string, { revenue: number; profit: number }> = {};
-  validSales.forEach(s => {
+  reportSales.forEach(s => {
     const month = new Date(s.date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    const refundedQty = s.refundedQuantity || 0;
-    const effectiveQty = s.quantity - refundedQty;
-    const revenue = effectiveQty * s.sellingPrice;
-    const profit = s.profit || 0;
+    const revenue = saleRevenue(s);
+    const profit = saleProfit(s);
 
     if (!monthlyData[month]) {
       monthlyData[month] = { revenue: 0, profit: 0 };
@@ -190,11 +181,11 @@ export function generateFinancialReport(
     month,
     formatCurrency(data.revenue, options.currency),
     formatCurrency(data.profit, options.currency),
-    data.revenue > 0 ? `${((data.profit / data.revenue) * 100).toFixed(2)}%` : '0%'
+    data.revenue > 0 ? `${marginPercent(data.profit, data.revenue).toFixed(2)}%` : '0%'
   ]);
 
   autoTable(doc, {
-    startY: 85,
+    startY: otherCurrencyCount > 0 ? 88 : 85,
     head: [['Month', 'Revenue', 'Profit', 'Margin']],
     body: monthlyTableData,
     theme: 'striped',

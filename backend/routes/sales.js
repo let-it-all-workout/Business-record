@@ -3,8 +3,106 @@ import db from '../database/index.js';
 import { verifyToken } from './auth.js';
 import { validateUUIDParam, validateUUID, validateNumeric, sanitizeString } from '../middleware/validation.js';
 import { handleError } from '../middleware/errorHandler.js';
+import {
+  allocateIntegers,
+  inputError,
+  profitForUnits,
+  roundMoney,
+  weightedPurchasePrice,
+  wholeUnits,
+} from '../src/calculations.js';
 
 const router = express.Router();
+
+function sendRouteError(req, res, error, fallback) {
+  if (error?.statusCode === 400) {
+    return res.status(400).json({ error: error.message });
+  }
+  const errorResponse = handleError(error, req, res, fallback);
+  return res.status(500).json(errorResponse);
+}
+
+async function syncProductQuantity(txDb, productId, now) {
+  const batches = await txDb.prepare(
+    'SELECT remaining_quantity FROM stock_batches WHERE product_id = $1',
+  ).all(productId);
+  const newQuantity = batches.reduce((sum, batch) => sum + Number(batch.remaining_quantity), 0);
+  await txDb.prepare('UPDATE products SET quantity = $1, updated_at = $2 WHERE id = $3')
+    .run(newQuantity, now, productId);
+  return newQuantity;
+}
+
+async function saleBatchCost(txDb, saleId) {
+  const lines = await txDb.prepare(
+    'SELECT quantity, purchase_price FROM sale_batch_details WHERE sale_id = $1',
+  ).all(saleId);
+  const units = lines.reduce((sum, line) => sum + Number(line.quantity), 0);
+  const cost = roundMoney(lines.reduce((sum, line) => sum + Number(line.quantity) * Number(line.purchase_price), 0));
+  return {
+    units,
+    cost,
+    purchasePrice: units > 0 ? roundMoney(cost / units) : 0,
+  };
+}
+
+async function reduceSaleDetails(txDb, saleId, units, restoreStock) {
+  const details = await txDb.prepare(
+    'SELECT id, batch_id, quantity FROM sale_batch_details WHERE sale_id = $1 ORDER BY id',
+  ).all(saleId);
+  if (details.length === 0) return false;
+  const shares = allocateIntegers(units, details.map((detail) => Number(detail.quantity)));
+  for (let i = 0; i < details.length; i += 1) {
+    const share = shares[i];
+    if (share === 0) continue;
+    if (restoreStock) {
+      await txDb.prepare(
+        'UPDATE stock_batches SET remaining_quantity = remaining_quantity + $1 WHERE id = $2',
+      ).run(share, details[i].batch_id);
+    }
+    const left = Number(details[i].quantity) - share;
+    if (left === 0) {
+      await txDb.prepare('DELETE FROM sale_batch_details WHERE id = $1').run(details[i].id);
+    } else {
+      await txDb.prepare('UPDATE sale_batch_details SET quantity = $1 WHERE id = $2').run(left, details[i].id);
+    }
+  }
+  return true;
+}
+
+/** Drop detail rows that still list units already returned by an older refund. */
+async function alignDetailsToOutstanding(txDb, saleId, outstanding) {
+  const current = await saleBatchCost(txDb, saleId);
+  const extra = current.units - outstanding;
+  if (extra > 0) {
+    await reduceSaleDetails(txDb, saleId, extra, false);
+  }
+}
+
+async function takeUnitsFromBatches(txDb, saleId, productId, units) {
+  let need = units;
+  const batches = await txDb.prepare(`
+    SELECT id, remaining_quantity, purchase_price
+    FROM stock_batches
+    WHERE product_id = $1 AND remaining_quantity > 0
+    ORDER BY purchase_date ASC, id ASC
+  `).all(productId);
+  for (const batch of batches) {
+    if (need <= 0) break;
+    const take = Math.min(need, Number(batch.remaining_quantity));
+    if (take <= 0) continue;
+    await txDb.prepare(
+      'UPDATE stock_batches SET remaining_quantity = remaining_quantity - $1 WHERE id = $2',
+    ).run(take, batch.id);
+    await txDb.prepare(`
+      INSERT INTO sale_batch_details (sale_id, batch_id, quantity, purchase_price)
+      VALUES ($1, $2, $3, $4)
+    `).run(saleId, batch.id, take, roundMoney(batch.purchase_price));
+    need -= take;
+  }
+  if (need > 0) {
+    throw inputError(`Insufficient stock. Short by ${need} units.`);
+  }
+}
 
 // Helper to get business filter
 function getBusinessFilter(req) {
@@ -152,10 +250,8 @@ router.post('/', verifyToken, async (req, res) => {
       quantity,
       sellingPrice,
       purchasePrice,
-      profit,
       currency,
       batchDetails,
-      businessId,
     } = req.body;
     
     // Validate and sanitize inputs
@@ -170,17 +266,13 @@ router.post('/', verifyToken, async (req, res) => {
     }
     productName = sanitizeString(productName, 200);
     
-    if (!validateNumeric(quantity, 1)) {
-      return res.status(400).json({ error: 'Invalid quantity' });
+    const units = wholeUnits(quantity, 'Quantity');
+    if (units < 1) {
+      return res.status(400).json({ error: 'Quantity must be at least 1' });
     }
-    if (!validateNumeric(sellingPrice, 0)) {
+    const price = roundMoney(sellingPrice);
+    if (price < 0) {
       return res.status(400).json({ error: 'Invalid selling price' });
-    }
-    if (!validateNumeric(purchasePrice, 0)) {
-      return res.status(400).json({ error: 'Invalid purchase price' });
-    }
-    if (!validateNumeric(profit)) {
-      return res.status(400).json({ error: 'Invalid profit' });
     }
 
     // Use user's business_id
@@ -190,18 +282,100 @@ router.post('/', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Business context required' });
     }
 
-    // Use a transaction to ensure all operations happen atomically (async)
+    // Profit and cost are calculated here. The client preview is not trusted.
     const transactionFn = db.transaction(async (txDb) => {
       const now = new Date().toISOString();
-
-      // Determine if this is a goods inventory sale
       const isGoodsInventorySale = !!(inventoryId && goodId);
-
-      // For goods inventory sales, productId should be null
-      // For regular product sales, productId must be valid
       const actualProductId = isGoodsInventorySale ? null : productId;
+      let cost = roundMoney(purchasePrice || 0);
+      let saleCurrency = currency || 'USD';
+      let pricedBatches = [];
 
-      // Insert sale (PostgreSQL will generate UUID)
+      if (isGoodsInventorySale) {
+        const good = await txDb.prepare(`
+          SELECT g.remaining_quantity, g.unit_price, g.currency
+          FROM goods g
+          JOIN goods_inventories i ON i.id = g.inventory_id
+          WHERE g.id = $1 AND i.id = $2 AND i.business_id = $3
+        `).get(goodId, inventoryId, targetBusinessId);
+        if (!good) {
+          throw inputError('That product is not in this inventory');
+        }
+        const onHand = wholeUnits(good.remaining_quantity, 'Stock');
+        if (units > onHand) {
+          throw inputError(`Insufficient stock. Only ${onHand} units available.`);
+        }
+        cost = roundMoney(good.unit_price);
+        saleCurrency = good.currency || saleCurrency;
+        await txDb.prepare(`
+          UPDATE goods
+          SET remaining_quantity = $1, updated_at = $2
+          WHERE id = $3
+        `).run(onHand - units, now, goodId);
+      } else if (productId) {
+        const product = await txDb.prepare(
+          'SELECT id FROM products WHERE id = $1 AND (business_id = $2 OR business_id IS NULL)',
+        ).get(productId, targetBusinessId);
+        if (!product) {
+          throw inputError('Product not found');
+        }
+        const batchCountRow = await txDb.prepare(
+          'SELECT COUNT(*)::int AS count FROM stock_batches WHERE product_id = $1',
+        ).get(productId);
+        const batchCount = Number(batchCountRow?.count || 0);
+        if (batchCount > 0) {
+          if (!Array.isArray(batchDetails) || batchDetails.length === 0) {
+            throw inputError('Choose stock batches that cover the full quantity');
+          }
+          let covered = 0;
+          const claimed = new Map();
+          for (const detail of batchDetails) {
+            const batchUnits = wholeUnits(detail.quantity, 'Batch quantity');
+            if (batchUnits < 1) {
+              throw inputError('Batch quantity must be at least 1');
+            }
+            if (!validateUUID(detail.batchId)) {
+              throw inputError('Invalid batch');
+            }
+            const batch = await txDb.prepare(
+              'SELECT remaining_quantity, purchase_price, product_id FROM stock_batches WHERE id = $1',
+            ).get(detail.batchId);
+            if (!batch || batch.product_id !== productId) {
+              throw inputError('A selected batch does not belong to this product');
+            }
+            const available = Number(batch.remaining_quantity);
+            const alreadyClaimed = claimed.get(detail.batchId) || 0;
+            if (alreadyClaimed + batchUnits > available) {
+              throw inputError(`Insufficient stock in a batch. Only ${available} left.`);
+            }
+            claimed.set(detail.batchId, alreadyClaimed + batchUnits);
+            covered += batchUnits;
+            pricedBatches.push({
+              batchId: detail.batchId,
+              quantity: batchUnits,
+              purchasePrice: roundMoney(batch.purchase_price),
+            });
+          }
+          if (covered !== units) {
+            throw inputError('Batch quantities must add up to the sale quantity');
+          }
+          cost = weightedPurchasePrice(pricedBatches);
+        } else {
+          const stock = await txDb.prepare('SELECT quantity FROM products WHERE id = $1').get(productId);
+          const onHand = Number(stock?.quantity || 0);
+          if (units > onHand) {
+            throw inputError(`Insufficient stock. Only ${onHand} units available.`);
+          }
+          await txDb.prepare('UPDATE products SET quantity = $1, updated_at = $2 WHERE id = $3')
+            .run(onHand - units, now, productId);
+        }
+      } else {
+        throw inputError('A product is required');
+      }
+
+      // Profit uses the rounded unit cost stored on the sale, so the screen matches the database.
+      const profitAmount = profitForUnits(units, price, cost);
+
       const saleResult = await txDb.prepare(`
         INSERT INTO sales (
           product_id, product_name, inventory_id, good_id,
@@ -214,105 +388,56 @@ router.post('/', verifyToken, async (req, res) => {
         productName,
         inventoryId || null,
         goodId || null,
-        quantity,
-        sellingPrice,
-        purchasePrice,
-        profit,
-        currency || 'USD',
+        units,
+        price,
+        cost,
+        profitAmount,
+        saleCurrency,
         now,
-        targetBusinessId
+        targetBusinessId,
       );
 
       const id = saleResult.id;
 
-      // Handle goods inventory sale
-      if (isGoodsInventorySale && goodId) {
-        // Get current good state
-        const good = await txDb.prepare('SELECT remaining_quantity, quantity FROM goods WHERE id = $1').get(goodId);
-        if (!good) {
-          throw new Error(`Good with id ${goodId} not found`);
-        }
-        
-        // Check if there's enough stock
-        if (parseInt(good.remaining_quantity) < quantity) {
-          throw new Error(`Insufficient stock! Only ${good.remaining_quantity} units available, but trying to sell ${quantity}`);
-        }
-        
-        // Update good's remaining quantity
-        const newRemainingQuantity = parseInt(good.remaining_quantity) - quantity;
-        if (newRemainingQuantity < 0) {
-          throw new Error(`Cannot sell ${quantity} units. Only ${good.remaining_quantity} units remaining.`);
-        }
-        
-        await txDb.prepare(`
-          UPDATE goods 
-          SET remaining_quantity = $1, updated_at = $2
-          WHERE id = $3
-        `).run(newRemainingQuantity, now, goodId);
-        
-        console.log(`✅ Sale created: Deducted ${quantity} from good ${goodId}. Remaining: ${newRemainingQuantity}`);
-      } else {
-        // Handle regular product sale with batches
-        // Insert batch details if provided
-        if (batchDetails && batchDetails.length > 0) {
-          for (const detail of batchDetails) {
-            await txDb.prepare(`
-              INSERT INTO sale_batch_details (sale_id, batch_id, quantity, purchase_price)
-              VALUES ($1, $2, $3, $4)
-            `).run(id, detail.batchId, detail.quantity, detail.purchasePrice);
-          }
-        }
-
-        // Update product batches (reduce remaining quantity)
-        if (batchDetails && batchDetails.length > 0) {
-          for (const detail of batchDetails) {
-            await txDb.prepare(`
-              UPDATE stock_batches 
-              SET remaining_quantity = remaining_quantity - $1
-              WHERE id = $2
-            `).run(detail.quantity, detail.batchId);
-          }
-
-          // Update product quantity
-          const product = await txDb.prepare('SELECT id FROM products WHERE id = $1').get(productId);
-          if (product) {
-            const batches = await txDb.prepare('SELECT remaining_quantity FROM stock_batches WHERE product_id = $1').all(productId);
-            const newQuantity = batches.reduce((sum, b) => sum + parseInt(b.remaining_quantity), 0);
-            await txDb.prepare('UPDATE products SET quantity = $1, updated_at = $2 WHERE id = $3')
-              .run(newQuantity, now, productId);
-          }
-        }
-
-        // Add stock history entry (only for regular products, not goods)
-        if (productId) {
+      if (pricedBatches.length > 0) {
+        for (const detail of pricedBatches) {
           await txDb.prepare(`
-            INSERT INTO stock_history (product_id, date, quantity, type)
-            VALUES ($1, $2, $3, 'sold')
-          `).run(productId, now, quantity);
+            INSERT INTO sale_batch_details (sale_id, batch_id, quantity, purchase_price)
+            VALUES ($1, $2, $3, $4)
+          `).run(id, detail.batchId, detail.quantity, detail.purchasePrice);
+          await txDb.prepare(`
+            UPDATE stock_batches
+            SET remaining_quantity = remaining_quantity - $1
+            WHERE id = $2
+          `).run(detail.quantity, detail.batchId);
         }
+        await syncProductQuantity(txDb, productId, now);
+        await txDb.prepare(`
+          INSERT INTO stock_history (product_id, date, quantity, type)
+          VALUES ($1, $2, $3, 'sold')
+        `).run(productId, now, units);
+      } else if (productId) {
+        await txDb.prepare(`
+          INSERT INTO stock_history (product_id, date, quantity, type)
+          VALUES ($1, $2, $3, 'sold')
+        `).run(productId, now, units);
       }
 
-      return { id, message: 'Sale created successfully' };
-    });
-    
-    const result = await transactionFn({
-      productId,
-      productName,
-      inventoryId,
-      goodId,
-      quantity,
-      sellingPrice,
-      purchasePrice,
-      profit,
-      currency,
-      batchDetails,
-      targetBusinessId,
+      return {
+        id,
+        message: 'Sale created successfully',
+        profit: profitAmount,
+        purchasePrice: cost,
+        sellingPrice: price,
+        quantity: units,
+        currency: saleCurrency,
+      };
     });
 
+    const result = await transactionFn();
     res.status(201).json(result);
   } catch (error) {
-    const errorResponse = handleError(error, req, res, 'Failed to create sale. Please try again.');
-    res.status(500).json(errorResponse);
+    sendRouteError(req, res, error, 'Failed to create sale. Please try again.');
   }
 });
 
@@ -345,7 +470,7 @@ router.put('/:id', verifyToken, validateUUIDParam('id'), async (req, res) => {
       }
     }
 
-    const sellingPrice = req.body.sellingPrice || req.body.selling_price;
+    const sellingPrice = req.body.sellingPrice ?? req.body.selling_price;
     const quantity = req.body.quantity;
     
     // Use a transaction to ensure all operations happen atomically (async)
@@ -358,123 +483,105 @@ router.put('/:id', verifyToken, validateUUIDParam('id'), async (req, res) => {
         throw new Error('Sale not found');
       }
 
-      const oldQuantity = originalSale.quantity;
-      const newQuantity = quantity || oldQuantity;
-      const newSellingPrice = sellingPrice || originalSale.selling_price;
-      const quantityDifference = newQuantity - oldQuantity;
-      const refundedQuantity = originalSale.refunded_quantity || 0;
-
-      // Validation: Cannot set quantity below refunded quantity
+      const oldQuantity = wholeUnits(originalSale.quantity, 'Sale quantity');
+      const refundedQuantity = wholeUnits(originalSale.refunded_quantity || 0, 'Refunded quantity');
+      const newQuantity = quantity === undefined || quantity === null || quantity === ''
+        ? oldQuantity
+        : wholeUnits(quantity, 'Quantity');
+      const newSellingPrice = sellingPrice === undefined || sellingPrice === null || sellingPrice === ''
+        ? roundMoney(originalSale.selling_price)
+        : roundMoney(sellingPrice);
+      if (newQuantity < 1) {
+        throw inputError('Quantity must be at least 1');
+      }
+      if (newSellingPrice < 0) {
+        throw inputError('Invalid selling price');
+      }
       if (newQuantity < refundedQuantity) {
-        throw new Error(`Cannot set quantity to ${newQuantity}. ${refundedQuantity} units have already been refunded.`);
+        throw inputError(`Cannot set quantity to ${newQuantity}. ${refundedQuantity} units have already been refunded.`);
       }
 
-      // Recalculate profit - account for refunded quantities
-      const purchasePrice = parseFloat(originalSale.purchase_price) || 0;
-      const profitPerUnit = parseFloat(newSellingPrice) - purchasePrice;
-      const effectiveQuantity = newQuantity - refundedQuantity; // Only count non-refunded
-      const newProfit = profitPerUnit * effectiveQuantity;
+      const quantityDifference = newQuantity - oldQuantity;
+      const effectiveQuantity = newQuantity - refundedQuantity;
 
-      console.log(`[UPDATE SALE] Processing update for sale ${saleId}:`);
-      console.log(`  - Old quantity: ${oldQuantity}, New quantity: ${newQuantity}`);
-      console.log(`  - Refunded quantity: ${refundedQuantity}`);
-      console.log(`  - Effective quantity (non-refunded): ${effectiveQuantity}`);
-      console.log(`  - Profit: ${originalSale.profit} -> ${newProfit}`);
+      // Write the new quantity before goods stock is rebuilt from every sale.
+      await txDb.prepare(`
+        UPDATE sales
+        SET selling_price = $1, quantity = $2, updated_at = $3
+        WHERE id = $4
+      `).run(newSellingPrice, newQuantity, now, saleId);
 
-      // Update sale with new values and recalculated profit
-      const result = await txDb.prepare(`
-        UPDATE sales 
-        SET selling_price = $1, quantity = $2, profit = $3, updated_at = $4
-        WHERE id = $5
-      `).run(newSellingPrice, newQuantity, newProfit, now, saleId);
+      let purchasePrice = roundMoney(originalSale.purchase_price);
 
-      if (result.changes === 0) {
-        throw new Error('Sale not found or update failed');
-      }
-
-      // Handle stock quantity changes
-      if (quantityDifference !== 0) {
-        // Handle goods inventory sale
-        if (originalSale.good_id) {
-          console.log(`[UPDATE SALE] Updating stock for good_id: ${originalSale.good_id}`);
-          
-          // Recalculate remaining quantity from ALL sales (like refund does)
-          // This ensures accuracy even if database was in inconsistent state
-          const allSalesForGood = await txDb.prepare(`
-            SELECT quantity, refunded_quantity FROM sales WHERE good_id = $1
-          `).all(originalSale.good_id);
-          
-          const totalNetSold = allSalesForGood.reduce((sum, s) => {
-            const refunded = s.refunded_quantity || 0;
-            return sum + (s.quantity - refunded);
-          }, 0);
-          
-          const good = await txDb.prepare('SELECT quantity FROM goods WHERE id = $1').get(originalSale.good_id);
-          if (!good) {
-            throw new Error(`Good not found: ${originalSale.good_id}`);
-          }
-          
-          const correctRemainingQuantity = parseInt(good.quantity) - totalNetSold;
-          
-          console.log(`[UPDATE SALE] Good stock recalculation:`);
-          console.log(`  - Total quantity: ${good.quantity}`);
-          console.log(`  - Total net sold: ${totalNetSold}`);
-          console.log(`  - Correct remaining: ${correctRemainingQuantity}`);
-          
-          await txDb.prepare(`
-            UPDATE goods 
-            SET remaining_quantity = $1, updated_at = $2
-            WHERE id = $3
-          `).run(correctRemainingQuantity, now, originalSale.good_id);
-          
-          console.log(`[UPDATE SALE] ✅ Stock updated for good`);
-        } 
-        // Handle regular product sale with batches
-        else if (originalSale.product_id) {
-          console.log(`[UPDATE SALE] Updating stock for product_id: ${originalSale.product_id}`);
-          
-          const batchDetails = await txDb.prepare(`
-            SELECT batch_id, quantity FROM sale_batch_details WHERE sale_id = $1
-          `).all(saleId);
-
-          if (batchDetails.length > 0) {
-            // Calculate ratio for each batch
-            if (oldQuantity === 0) {
-              throw new Error('Cannot update sale: original quantity is 0, cannot calculate batch ratio');
-            }
-            const ratio = quantityDifference / oldQuantity;
-            
-            for (const detail of batchDetails) {
-              const batchQuantityChange = Math.round(detail.quantity * ratio);
-              await txDb.prepare(`
-                UPDATE stock_batches 
-                SET remaining_quantity = remaining_quantity - $1
-                WHERE id = $2
-              `).run(batchQuantityChange, detail.batch_id);
-            }
-
-            // Update product quantity from batches
-            const batches = await txDb.prepare('SELECT remaining_quantity FROM stock_batches WHERE product_id = $1').all(originalSale.product_id);
-            const newProductQuantity = batches.reduce((sum, b) => sum + parseInt(b.remaining_quantity), 0);
-            await txDb.prepare('UPDATE products SET quantity = $1, updated_at = $2 WHERE id = $3')
-              .run(newProductQuantity, now, originalSale.product_id);
-            
-            console.log(`[UPDATE SALE] ✅ Stock updated for product with batches`);
+      if (quantityDifference !== 0 && originalSale.good_id) {
+        const allSalesForGood = await txDb.prepare(`
+          SELECT quantity, refunded_quantity FROM sales WHERE good_id = $1
+        `).all(originalSale.good_id);
+        const totalNetSold = allSalesForGood.reduce((sum, row) => {
+          return sum + (Number(row.quantity) - Number(row.refunded_quantity || 0));
+        }, 0);
+        const good = await txDb.prepare('SELECT quantity FROM goods WHERE id = $1').get(originalSale.good_id);
+        if (!good) {
+          throw inputError('Product not found');
+        }
+        const correctRemainingQuantity = Number(good.quantity) - totalNetSold;
+        if (correctRemainingQuantity < 0) {
+          throw inputError(`Insufficient stock. This edit needs ${-correctRemainingQuantity} more units than are on hand.`);
+        }
+        await txDb.prepare(`
+          UPDATE goods
+          SET remaining_quantity = $1, updated_at = $2
+          WHERE id = $3
+        `).run(correctRemainingQuantity, now, originalSale.good_id);
+      } else if (originalSale.product_id && quantityDifference !== 0) {
+        const detailCount = await txDb.prepare(
+          'SELECT COUNT(*)::int AS count FROM sale_batch_details WHERE sale_id = $1',
+        ).get(saleId);
+        const hasBatches = Number(detailCount?.count || 0) > 0;
+        if (quantityDifference < 0) {
+          if (hasBatches) {
+            await alignDetailsToOutstanding(txDb, saleId, oldQuantity - refundedQuantity);
+            await reduceSaleDetails(txDb, saleId, -quantityDifference, true);
+            await syncProductQuantity(txDb, originalSale.product_id, now);
           } else {
-            // No batch details - update product quantity directly (legacy products)
             const product = await txDb.prepare('SELECT quantity FROM products WHERE id = $1').get(originalSale.product_id);
             if (product) {
-              const newProductQuantity = Math.max(0, parseInt(product.quantity) - quantityDifference);
               await txDb.prepare('UPDATE products SET quantity = $1, updated_at = $2 WHERE id = $3')
-                .run(newProductQuantity, now, originalSale.product_id);
-              
-              console.log(`[UPDATE SALE] ✅ Stock updated for legacy product`);
+                .run(Number(product.quantity) - quantityDifference, now, originalSale.product_id);
             }
+          }
+        } else if (hasBatches) {
+          await takeUnitsFromBatches(txDb, saleId, originalSale.product_id, quantityDifference);
+          await syncProductQuantity(txDb, originalSale.product_id, now);
+        } else {
+          const product = await txDb.prepare('SELECT quantity FROM products WHERE id = $1').get(originalSale.product_id);
+          const onHand = Number(product?.quantity || 0);
+          if (quantityDifference > onHand) {
+            throw inputError(`Insufficient stock. Only ${onHand} units available.`);
+          }
+          if (product) {
+            await txDb.prepare('UPDATE products SET quantity = $1, updated_at = $2 WHERE id = $3')
+              .run(onHand - quantityDifference, now, originalSale.product_id);
           }
         }
       }
 
-      return { message: 'Sale updated successfully' };
+      if (originalSale.product_id) {
+        await alignDetailsToOutstanding(txDb, saleId, effectiveQuantity);
+        const batchCost = await saleBatchCost(txDb, saleId);
+        if (batchCost.units > 0) {
+          purchasePrice = batchCost.purchasePrice;
+        }
+      }
+      const newProfit = profitForUnits(effectiveQuantity, newSellingPrice, purchasePrice);
+
+      await txDb.prepare(`
+        UPDATE sales
+        SET purchase_price = $1, profit = $2, updated_at = $3
+        WHERE id = $4
+      `).run(purchasePrice, newProfit, now, saleId);
+
+      return { message: 'Sale updated successfully', profit: newProfit, purchasePrice };
     });
     
     // Execute the transaction
@@ -484,8 +591,7 @@ router.put('/:id', verifyToken, validateUUIDParam('id'), async (req, res) => {
     
     res.json(result);
   } catch (error) {
-    const errorResponse = handleError(error, req, res, 'Failed to update sale. Please try again.');
-    res.status(500).json(errorResponse);
+    sendRouteError(req, res, error, 'Failed to update sale. Please try again.');
   }
 });
 
@@ -531,33 +637,50 @@ router.post('/:id/refund', verifyToken, validateUUIDParam('id'), async (req, res
         throw new Error('Sale not found');
       }
 
-      const currentRefunded = sale.refunded_quantity || 0;
-      const newRefundedQuantity = currentRefunded + quantity;
-      const isFullyRefunded = newRefundedQuantity >= sale.quantity;
+      const refundUnits = wholeUnits(quantity, 'Refund quantity');
+      if (refundUnits < 1) {
+        throw inputError('Refund quantity must be at least 1');
+      }
+      const sold = wholeUnits(sale.quantity, 'Sale quantity');
+      const currentRefunded = wholeUnits(sale.refunded_quantity || 0, 'Refunded quantity');
+      if (currentRefunded + refundUnits > sold) {
+        throw inputError(`Only ${sold - currentRefunded} units can still be refunded.`);
+      }
+      const newRefundedQuantity = currentRefunded + refundUnits;
+      const remainingQuantity = sold - newRefundedQuantity;
+      const isFullyRefunded = remainingQuantity === 0;
+      let purchasePrice = roundMoney(sale.purchase_price);
 
-      // Recalculate profit based on remaining (non-refunded) quantity
-      const profitPerUnit = parseFloat(sale.selling_price) - parseFloat(sale.purchase_price);
-      const remainingQuantity = sale.quantity - newRefundedQuantity;
-      const recalculatedProfit = profitPerUnit * remainingQuantity;
+      if (sale.product_id) {
+        await alignDetailsToOutstanding(txDb, saleId, sold - currentRefunded);
+        const restored = await reduceSaleDetails(txDb, saleId, refundUnits, true);
+        if (restored) {
+          await syncProductQuantity(txDb, sale.product_id, now);
+          const batchCost = await saleBatchCost(txDb, saleId);
+          if (batchCost.units > 0) purchasePrice = batchCost.purchasePrice;
+        } else {
+          const product = await txDb.prepare('SELECT quantity FROM products WHERE id = $1').get(sale.product_id);
+          if (!product) throw inputError('Product not found');
+          await txDb.prepare('UPDATE products SET quantity = $1, updated_at = $2 WHERE id = $3')
+            .run(Number(product.quantity) + refundUnits, now, sale.product_id);
+        }
+      }
+      const recalculatedProfit = profitForUnits(
+        remainingQuantity,
+        roundMoney(sale.selling_price),
+        purchasePrice,
+      );
 
-      console.log(`[REFUND] Processing refund for sale ${saleId}:`);
-      console.log(`  - Quantity to refund: ${quantity}`);
-      console.log(`  - Current refunded: ${currentRefunded}`);
-      console.log(`  - New refunded total: ${newRefundedQuantity}`);
-      console.log(`  - Profit: ${sale.profit} -> ${recalculatedProfit}`);
-
-      // Update sale with recalculated profit
       await txDb.prepare(`
-        UPDATE sales 
-        SET refunded = $1, refunded_quantity = $2, refund_date = $3, profit = $4, updated_at = $5
-        WHERE id = $6
-      `).run(isFullyRefunded, newRefundedQuantity, now, recalculatedProfit, now, saleId);
+        UPDATE sales
+        SET refunded = $1, refunded_quantity = $2, refund_date = $3, profit = $4, purchase_price = $5, updated_at = $6
+        WHERE id = $7
+      `).run(isFullyRefunded, newRefundedQuantity, now, recalculatedProfit, purchasePrice, now, saleId);
 
-      // Add refund history (PostgreSQL will generate UUID)
       await txDb.prepare(`
         INSERT INTO refund_history (sale_id, date, quantity)
         VALUES ($1, $2, $3)
-      `).run(saleId, now, quantity);
+      `).run(saleId, now, refundUnits);
 
       // Restore stock - handle both goods inventory and regular products
       let stockRestored = false;
@@ -578,11 +701,14 @@ router.post('/:id/refund', verifyToken, validateUUIDParam('id'), async (req, res
           `).all(sale.good_id);
           
           const totalNetSold = allSalesForGood.reduce((sum, s) => {
-            const refunded = s.refunded_quantity || 0;
-            return sum + (s.quantity - refunded);
+            const refunded = Number(s.refunded_quantity || 0);
+            return sum + (Number(s.quantity) - refunded);
           }, 0);
           
-          const correctRemainingQuantity = parseInt(good.quantity) - totalNetSold;
+          const correctRemainingQuantity = Number(good.quantity) - totalNetSold;
+          if (correctRemainingQuantity < 0) {
+            throw inputError('Stock records do not cover this refund. Check the product quantity.');
+          }
           
           console.log(`[REFUND] Good "${good.name}":`);
           console.log(`  - Total Quantity: ${good.quantity}`);
@@ -605,7 +731,7 @@ router.post('/:id/refund', verifyToken, validateUUIDParam('id'), async (req, res
           
           // Verify the update
           const updated = await txDb.prepare('SELECT remaining_quantity, quantity FROM goods WHERE id = $1').get(sale.good_id);
-          if (!updated || parseInt(updated.remaining_quantity) !== correctRemainingQuantity) {
+          if (!updated || Number(updated.remaining_quantity) !== correctRemainingQuantity) {
             throw new Error(`Stock update verification failed for good ${sale.good_id}`);
           }
           
@@ -624,65 +750,14 @@ router.post('/:id/refund', verifyToken, validateUUIDParam('id'), async (req, res
           throw new Error(`Good not found: ${sale.good_id}`);
         }
       } else if (sale.product_id) {
-        // Handle regular product refund
-        console.log(`[REFUND] Restoring stock for product_id: ${sale.product_id}`);
-        
-        const batchDetails = await txDb.prepare(`
-          SELECT batch_id, quantity FROM sale_batch_details WHERE sale_id = $1
-        `).all(saleId);
-
-        if (batchDetails.length > 0) {
-          // Restore to batches proportionally
-          const refundRatio = quantity / sale.quantity;
-          
-          for (const detail of batchDetails) {
-            const batchRefundQuantity = Math.round(detail.quantity * refundRatio);
-            await txDb.prepare(`
-              UPDATE stock_batches 
-              SET remaining_quantity = remaining_quantity + $1
-              WHERE id = $2
-            `).run(batchRefundQuantity, detail.batch_id);
-          }
-
-          // Update product quantity from batches
-          const batches = await txDb.prepare('SELECT remaining_quantity FROM stock_batches WHERE product_id = $1').all(sale.product_id);
-          const newQuantity = batches.reduce((sum, b) => sum + parseInt(b.remaining_quantity), 0);
-          const product = await txDb.prepare('SELECT name FROM products WHERE id = $1').get(sale.product_id);
-          await txDb.prepare('UPDATE products SET quantity = $1, updated_at = $2 WHERE id = $3')
-            .run(newQuantity, now, sale.product_id);
-          
-          stockRestored = true;
-          updatedStockInfo = {
-            type: 'product',
-            id: sale.product_id,
-            name: product?.name || 'Unknown',
-            newQuantity: newQuantity
-          };
-          
-          console.log(`[REFUND] ✅ Stock successfully restored for product`);
-        } else {
-          // No batch details - restore directly to product (legacy products)
-          const product = await txDb.prepare('SELECT quantity, name FROM products WHERE id = $1').get(sale.product_id);
-          if (product) {
-            const oldQuantity = parseInt(product.quantity);
-            const newProductQuantity = oldQuantity + quantity;
-            await txDb.prepare('UPDATE products SET quantity = $1, updated_at = $2 WHERE id = $3')
-              .run(newProductQuantity, now, sale.product_id);
-            
-            stockRestored = true;
-            updatedStockInfo = {
-              type: 'product',
-              id: sale.product_id,
-              name: product.name,
-              oldQuantity: oldQuantity,
-              newQuantity: newProductQuantity
-            };
-            
-            console.log(`[REFUND] ✅ Stock successfully restored for product`);
-          } else {
-            throw new Error(`Product not found: ${sale.product_id}`);
-          }
-        }
+        const product = await txDb.prepare('SELECT name, quantity FROM products WHERE id = $1').get(sale.product_id);
+        stockRestored = true;
+        updatedStockInfo = {
+          type: 'product',
+          id: sale.product_id,
+          name: product?.name || 'Unknown',
+          newQuantity: Number(product?.quantity || 0),
+        };
       } else {
         throw new Error('Sale has neither good_id nor product_id');
       }
@@ -704,14 +779,8 @@ router.post('/:id/refund', verifyToken, validateUUIDParam('id'), async (req, res
     
     res.json(result);
   } catch (error) {
-    console.error('[REFUND] ❌ Error processing refund:', error);
-    console.error('[REFUND] Error stack:', error.stack);
-    // Don't expose internal error details in production
-    const isDevelopment = process.env.NODE_ENV === 'development';
-    res.status(500).json({ 
-      error: 'Failed to process refund',
-      ...(isDevelopment && { details: error.message })
-    });
+    console.error('[REFUND] Error processing refund:', error);
+    sendRouteError(req, res, error, 'Failed to process refund');
   }
 });
 

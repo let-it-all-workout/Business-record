@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react';
 import { Product } from '../types';
+import { formatCurrency } from '../utils/format';
+import { roundMoney, wholeQuantity } from '../utils/saleMath';
 
 interface AddStockFormProps {
   products: Product[];
+  currency: string;
   onSubmit: (productId: string, quantity: number, purchasePrice: number, purchaseDate: string, batchId?: string) => void;
   onCancel: () => void;
 }
 
-export default function AddStockForm({ products, onSubmit, onCancel }: AddStockFormProps) {
+export default function AddStockForm({ products, currency, onSubmit, onCancel }: AddStockFormProps) {
   const [selectedProductId, setSelectedProductId] = useState('');
   const [addToExisting, setAddToExisting] = useState(false);
   const [selectedBatchId, setSelectedBatchId] = useState('');
@@ -42,20 +45,20 @@ export default function AddStockForm({ products, onSubmit, onCancel }: AddStockF
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const quantityNum = parseInt(quantity, 10);
-    const purchasePriceNum = parseFloat(purchasePrice);
+    const quantityNum = wholeQuantity(quantity);
+    const purchasePriceNum = Number(purchasePrice);
 
     if (!selectedProductId) {
       alert('Please select a product');
       return;
     }
 
-    if (isNaN(quantityNum) || quantityNum <= 0) {
-      alert('Please enter a valid quantity (greater than 0)');
+    if (!quantityNum) {
+      alert('Enter a whole number of units.');
       return;
     }
 
-    if (isNaN(purchasePriceNum) || purchasePriceNum < 0) {
+    if (!Number.isFinite(purchasePriceNum) || purchasePriceNum < 0) {
       alert('Please enter a valid purchase price (0 or greater)');
       return;
     }
@@ -71,7 +74,7 @@ export default function AddStockForm({ products, onSubmit, onCancel }: AddStockF
     }
 
     // If adding to existing batch, pass batchId. Otherwise, undefined for new batch
-    onSubmit(selectedProductId, quantityNum, purchasePriceNum, purchaseDate, addToExisting ? selectedBatchId : undefined);
+    onSubmit(selectedProductId, quantityNum, roundMoney(purchasePriceNum), purchaseDate, addToExisting ? selectedBatchId : undefined);
   };
 
   return (
@@ -145,7 +148,7 @@ export default function AddStockForm({ products, onSubmit, onCancel }: AddStockF
                   {existingBatches.map((batch) => (
                     <option key={batch.id} value={batch.id}>
                       {new Date(batch.purchaseDate).toLocaleDateString()} - 
-                      ${batch.purchasePrice.toFixed(2)}/unit - 
+                      {formatCurrency(batch.purchasePrice, currency)}/unit - 
                       {batch.remainingQuantity}/{batch.quantity} remaining
                     </option>
                   ))}
@@ -154,7 +157,7 @@ export default function AddStockForm({ products, onSubmit, onCancel }: AddStockF
                   <div className="mt-2 text-xs text-gray-600 bg-white p-2 rounded">
                     <p>Selected batch: {new Date(existingBatches.find(b => b.id === selectedBatchId)?.purchaseDate || '').toLocaleDateString()}</p>
                     <p>Current remaining: {existingBatches.find(b => b.id === selectedBatchId)?.remainingQuantity} units</p>
-                    <p>After adding: {(existingBatches.find(b => b.id === selectedBatchId)?.remainingQuantity || 0) + parseInt(quantity || '0', 10)} units</p>
+                    <p>After adding: {(existingBatches.find(b => b.id === selectedBatchId)?.remainingQuantity || 0) + (wholeQuantity(quantity) || 0)} units</p>
                   </div>
                 )}
               </div>
@@ -191,6 +194,7 @@ export default function AddStockForm({ products, onSubmit, onCancel }: AddStockF
             className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
             placeholder="Enter quantity purchased"
             min="1"
+            step="1"
             required
           />
         </div>
@@ -218,7 +222,7 @@ export default function AddStockForm({ products, onSubmit, onCancel }: AddStockF
           )}
           {purchasePrice && quantity && (
             <p className="text-xs text-gray-500 mt-1">
-              Total Purchase Cost: ${(parseFloat(purchasePrice || '0') * parseInt(quantity || '0', 10)).toFixed(2)}
+              Total Purchase Cost: {formatCurrency(roundMoney((Number(purchasePrice) || 0) * (wholeQuantity(quantity) || 0)), currency)}
             </p>
           )}
         </div>

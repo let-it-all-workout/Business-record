@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Sale, Product } from '../types';
 import { formatCurrency } from '../utils/format';
+import { roundMoney, saleProfit, saleRevenue } from '../utils/saleMath';
 import { useAuth } from '../contexts/AuthContext';
 
 interface Expense {
@@ -31,27 +32,12 @@ export default function FinancialManager({ sales, globalCurrency }: FinancialMan
   });
 
   const validSales = sales.filter(s => s && s !== null);
+  const moneySales = validSales.filter((s) => (s.currency || globalCurrency) === globalCurrency);
+  const otherCurrencyCount = validSales.length - moneySales.length;
 
-  // Calculate COGS (Cost of Goods Sold)
-  const cogs = useMemo(() => {
-    return validSales.reduce((sum, s) => {
-      const refundedQty = s.refundedQuantity || 0;
-      const effectiveQty = s.quantity - refundedQty;
-      return sum + (s.purchasePrice * effectiveQty);
-    }, 0);
-  }, [validSales]);
-
-  // Calculate Revenue
-  const revenue = useMemo(() => {
-    return validSales.reduce((sum, s) => {
-      const refundedQty = s.refundedQuantity || 0;
-      const effectiveQty = s.quantity - refundedQty;
-      return sum + (effectiveQty * s.sellingPrice);
-    }, 0);
-  }, [validSales]);
-
-  // Calculate Gross Profit
-  const grossProfit = revenue - cogs;
+  const revenue = roundMoney(moneySales.reduce((sum, s) => sum + saleRevenue(s), 0));
+  const grossProfit = roundMoney(moneySales.reduce((sum, s) => sum + saleProfit(s), 0));
+  const cogs = roundMoney(revenue - grossProfit);
 
   // Calculate Total Expenses
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
@@ -59,19 +45,20 @@ export default function FinancialManager({ sales, globalCurrency }: FinancialMan
   // Calculate Net Profit
   const netProfit = grossProfit - totalExpenses;
 
-  // Calculate Tax (assuming 20% tax rate - can be made configurable)
+  // Planning estimate only. This is not a tax filing calculation.
   const taxRate = 0.20;
-  const tax = netProfit > 0 ? netProfit * taxRate : 0;
+  const tax = netProfit > 0 ? roundMoney(netProfit * taxRate) : 0;
   const profitAfterTax = netProfit - tax;
 
   const handleAddExpense = () => {
-    if (!expenseForm.description || !expenseForm.amount) return;
+    const amount = Number(expenseForm.amount);
+    if (!expenseForm.description || !Number.isFinite(amount) || amount < 0) return;
 
     const newExpense: Expense = {
       id: `expense-${Date.now()}`,
       date: expenseForm.date,
       description: expenseForm.description,
-      amount: parseFloat(expenseForm.amount),
+      amount: roundMoney(amount),
       category: expenseForm.category,
       currency: globalCurrency,
     };
@@ -111,6 +98,11 @@ export default function FinancialManager({ sales, globalCurrency }: FinancialMan
 
   return (
     <div className="space-y-6">
+      {otherCurrencyCount > 0 && (
+        <p className="text-sm text-slate-500">
+          {otherCurrencyCount} sale{otherCurrencyCount === 1 ? '' : 's'} in another currency {otherCurrencyCount === 1 ? 'is' : 'are'} not included in these totals.
+        </p>
+      )}
       {/* Financial Summary */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="card p-4">
@@ -119,6 +111,8 @@ export default function FinancialManager({ sales, globalCurrency }: FinancialMan
             {formatCurrency(revenue, globalCurrency)}
           </p>
         </div>
+        {canSeeFinancial && (
+        <>
         <div className="card p-4">
           <p className="text-sm text-slate-600 mb-1">COGS</p>
           <p className="text-2xl font-bold text-red-600">
@@ -137,8 +131,15 @@ export default function FinancialManager({ sales, globalCurrency }: FinancialMan
             {formatCurrency(netProfit, globalCurrency)}
           </p>
         </div>
+        </>
+        )}
       </div>
+      {!canSeeFinancial && (
+        <p className="text-sm text-slate-500">Cost, profit, and the tax estimate are visible to managers.</p>
+      )}
 
+      {canSeeFinancial && (
+      <>
       {/* Financial Breakdown */}
       <div className="card p-6">
         <h3 className="text-lg font-semibold text-slate-900 mb-4">Financial Breakdown</h3>
@@ -166,9 +167,10 @@ export default function FinancialManager({ sales, globalCurrency }: FinancialMan
             </span>
           </div>
           <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-            <span className="text-slate-700">Tax ({taxRate * 100}%)</span>
+            <span className="text-slate-700">Estimated tax ({taxRate * 100}%)</span>
             <span className="font-semibold text-red-600">-{formatCurrency(tax, globalCurrency)}</span>
           </div>
+          <p className="text-xs text-slate-500 px-3">Estimated tax (20%) is for planning. It is not a figure for filing.</p>
           <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-lg border-2 border-emerald-300">
             <span className="text-emerald-900 font-bold">Profit After Tax</span>
             <span className={`text-2xl font-bold ${profitAfterTax >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
@@ -295,6 +297,8 @@ export default function FinancialManager({ sales, globalCurrency }: FinancialMan
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }

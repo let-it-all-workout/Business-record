@@ -3,21 +3,10 @@ import { Sale } from '../types';
 import EditSaleForm from './EditSaleForm';
 import PartialRefundForm from './PartialRefundForm';
 import { formatCurrency, formatNumber } from '../utils/format';
+import { marginPercent, saleProfit, saleRevenue } from '../utils/saleMath';
+import { exportToCSV, salesExportRows } from '../utils/export';
 import { useAuth } from '../contexts/AuthContext';
 import PINVerification from './PINVerification';
-
-const CURRENCIES = [
-  { code: 'USD', symbol: '$', name: 'US Dollar' },
-  { code: 'EUR', symbol: '€', name: 'Euro' },
-  { code: 'GBP', symbol: '£', name: 'British Pound' },
-  { code: 'NGN', symbol: '₦', name: 'Nigerian Naira' },
-  { code: 'KES', symbol: 'KSh', name: 'Kenyan Shilling' },
-  { code: 'GHS', symbol: '₵', name: 'Ghanaian Cedi' },
-  { code: 'ZAR', symbol: 'R', name: 'South African Rand' },
-  { code: 'INR', symbol: '₹', name: 'Indian Rupee' },
-  { code: 'CNY', symbol: '¥', name: 'Chinese Yuan' },
-  { code: 'JPY', symbol: '¥', name: 'Japanese Yen' },
-];
 
 interface SalesHistoryProps {
   sales: Sale[];
@@ -75,30 +64,11 @@ export default function SalesHistory({ sales, onUpdateSale, onRefundSale, global
   });
   
   console.log('SalesHistory - valid sales count:', validSales.length);
-  
-  if (validSales.length === 0) {
-    return (
-      <div className="bg-white rounded-lg shadow-lg p-12 text-center">
-        <p className="text-gray-500 text-lg">No sales recorded yet.</p>
-        <p className="text-gray-400 text-sm mt-2">Record your first sale to see it here!</p>
-        {salesArray.length > 0 && (
-          <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
-            <p className="text-sm text-yellow-800">
-              <strong>Debug:</strong> {salesArray.length} sales found but filtered out. Check console for details.
-            </p>
-          </div>
-        )}
-      </div>
-    );
-  }
 
-  // Calculate totals accounting for refunds
-  // Revenue: Only count non-refunded sales
-  const totalRevenue = validSales.reduce((sum, sale) => {
-    const refundedQty = sale.refundedQuantity || 0;
-    const effectiveQty = sale.quantity - refundedQty;
-    return sum + (effectiveQty * sale.sellingPrice);
-  }, 0);
+  const inBusinessCurrency = (sale: Sale) => (sale.currency || globalCurrency) === globalCurrency;
+
+  // Money totals use one currency. Refunded units are already removed by saleRevenue.
+  const totalRevenue = validSales.filter(inBusinessCurrency).reduce((sum, sale) => sum + saleRevenue(sale), 0);
   
   // Items sold: Only count non-refunded items
   const totalItemsSold = validSales.reduce((sum, sale) => {
@@ -106,13 +76,7 @@ export default function SalesHistory({ sales, onUpdateSale, onRefundSale, global
     return sum + (sale.quantity - refundedQty);
   }, 0);
   
-  // Profit: Use recalculated profit from database (already accounts for refunds)
-  // The profit field in the database is recalculated when refunds occur
-  const totalProfit = validSales.reduce((sum, sale) => {
-    // The sale.profit is already recalculated in the database to reflect refunds
-    // So we can use it directly
-    return sum + (sale.profit || 0);
-  }, 0);
+  const totalProfit = validSales.filter(inBusinessCurrency).reduce((sum, sale) => sum + saleProfit(sale), 0);
 
   // Filter by date range
   const filteredByDate = useMemo(() => {
@@ -147,22 +111,16 @@ export default function SalesHistory({ sales, onUpdateSale, onRefundSale, global
   });
 
   // Recalculate totals for filtered sales
-  const filteredTotalRevenue = sortedSales.reduce((sum, sale) => {
-    const refundedQty = sale.refundedQuantity || 0;
-    const effectiveQty = sale.quantity - refundedQty;
-    return sum + (effectiveQty * sale.sellingPrice);
-  }, 0);
+  const filteredMoneySales = sortedSales.filter(inBusinessCurrency);
+  const otherCurrencyCount = sortedSales.length - filteredMoneySales.length;
+  const filteredTotalRevenue = filteredMoneySales.reduce((sum, sale) => sum + saleRevenue(sale), 0);
   
   const filteredTotalItemsSold = sortedSales.reduce((sum, sale) => {
     const refundedQty = sale.refundedQuantity || 0;
     return sum + (sale.quantity - refundedQty);
   }, 0);
   
-  // Profit: Use recalculated profit from database (already accounts for refunds)
-  const filteredTotalProfit = sortedSales.reduce((sum, sale) => {
-    // The sale.profit is already recalculated in the database to reflect refunds
-    return sum + (sale.profit || 0);
-  }, 0);
+  const filteredTotalProfit = filteredMoneySales.reduce((sum, sale) => sum + saleProfit(sale), 0);
 
   const handleExportFiltered = () => {
     let filename = `sales_${new Date().toISOString().split('T')[0]}`;
@@ -171,49 +129,7 @@ export default function SalesHistory({ sales, onUpdateSale, onRefundSale, global
       const end = endDate ? endDate.replace(/-/g, '') : 'all';
       filename = `sales_${start}_to_${end}`;
     }
-    // Create a custom export with filename
-    const currencySymbol = CURRENCIES.find(c => c.code === globalCurrency)?.symbol || '$';
-    const data = sortedSales.map(s => ({
-      'Date': new Date(s.date).toLocaleDateString(),
-      'Time': new Date(s.date).toLocaleTimeString(),
-      'Product': s.productName,
-      'Quantity': s.quantity,
-      'Selling Price': `${currencySymbol}${s.sellingPrice.toFixed(2)}`,
-      'Purchase Price': `${currencySymbol}${(s.purchasePrice || 0).toFixed(2)}`,
-      'Total': `${currencySymbol}${(s.quantity * s.sellingPrice).toFixed(2)}`,
-      'Profit': `${currencySymbol}${(s.profit || 0).toFixed(2)}`,
-      'Profit Margin': s.purchasePrice && s.purchasePrice > 0 
-        ? `${(((s.profit || 0) / (s.purchasePrice * s.quantity)) * 100).toFixed(1)}%`
-        : 'N/A',
-      'Refunded': s.refunded ? 'Yes' : 'No',
-      'Refunded Quantity': s.refundedQuantity || 0,
-      'Currency': s.currency,
-    }));
-    
-    // Use the export utility
-    const csvContent = [
-      Object.keys(data[0]).join(','),
-      ...data.map(row => 
-        Object.values(row).map(value => {
-          if (value === null || value === undefined) return '';
-          const stringValue = String(value);
-          if (stringValue.includes(',') || stringValue.includes('\n') || stringValue.includes('"')) {
-            return `"${stringValue.replace(/"/g, '""')}"`;
-          }
-          return stringValue;
-        }).join(',')
-      )
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${filename}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    exportToCSV(salesExportRows(sortedSales, globalCurrency), `${filename}.csv`);
   };
 
   const handleClearFilters = () => {
@@ -251,6 +167,22 @@ export default function SalesHistory({ sales, onUpdateSale, onRefundSale, global
       setRefundingSale(null);
     }
   };
+
+  if (validSales.length === 0) {
+    return (
+      <div className="bg-white rounded-lg shadow-lg p-12 text-center">
+        <p className="text-gray-500 text-lg">No sales recorded yet.</p>
+        <p className="text-gray-400 text-sm mt-2">Record your first sale to see it here!</p>
+        {salesArray.length > 0 && (
+          <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
+            <p className="text-sm text-yellow-800">
+              <strong>Debug:</strong> {salesArray.length} sales found but filtered out. Check console for details.
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -345,16 +277,19 @@ export default function SalesHistory({ sales, onUpdateSale, onRefundSale, global
           </div>
           <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
             <p className="text-slate-300 text-xs font-medium mb-1">Total Revenue</p>
-            <p className="text-2xl font-bold text-white">{CURRENCIES.find(c => c.code === globalCurrency)?.symbol || '$'}{filteredTotalRevenue.toFixed(2)} {globalCurrency}</p>
+            <p className="text-2xl font-bold text-white">{formatCurrency(filteredTotalRevenue, globalCurrency)}</p>
             {(startDate || endDate) && totalRevenue !== filteredTotalRevenue && (
               <p className="text-xs text-slate-400 mt-1">of {formatCurrency(totalRevenue, globalCurrency)} total</p>
+            )}
+            {otherCurrencyCount > 0 && (
+              <p className="text-xs text-slate-300 mt-1">{otherCurrencyCount} in another currency not included</p>
             )}
           </div>
           {canSeeFinancial && (
             <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
               <p className="text-slate-300 text-xs font-medium mb-1">Total Profit</p>
               <p className={`text-2xl font-bold ${filteredTotalProfit >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
-                {formatCurrency(filteredTotalProfit, globalCurrency)} {globalCurrency}
+                {formatCurrency(filteredTotalProfit, globalCurrency)}
               </p>
               {(startDate || endDate) && totalProfit !== filteredTotalProfit && (
                 <p className="text-xs text-slate-400 mt-1">of {formatCurrency(totalProfit, globalCurrency)} total</p>
@@ -403,17 +338,10 @@ export default function SalesHistory({ sales, onUpdateSale, onRefundSale, global
           </thead>
           <tbody className="bg-white divide-y divide-slate-100">
             {sortedSales.map((sale) => {
-              // Calculate profit margin - use effective quantity (accounting for refunds)
-              const refundedQty = sale.refundedQuantity || 0;
-              const effectiveQty = sale.quantity - refundedQty;
-              const effectiveCost = sale.purchasePrice * effectiveQty;
-              const profitMargin = sale.purchasePrice && sale.purchasePrice > 0 && effectiveQty > 0
-                ? ((sale.profit || 0) / effectiveCost) * 100
-                : 0;
-              
-              // Profit is already recalculated in database to account for refunds
-              const effectiveProfit = sale.profit || 0;
-              const effectiveTotal = effectiveQty * sale.sellingPrice;
+              const saleCurrency = sale.currency || globalCurrency;
+              const effectiveProfit = saleProfit(sale);
+              const effectiveTotal = saleRevenue(sale);
+              const profitMargin = marginPercent(effectiveProfit, effectiveTotal);
               
               return (
                 <tr key={sale.id} className={`hover:bg-slate-50/50 transition-colors ${sale.refunded ? 'opacity-60 bg-red-50/20' : ''}`}>
@@ -457,17 +385,17 @@ export default function SalesHistory({ sales, onUpdateSale, onRefundSale, global
                   </td>
                   <td className="table-cell py-3 px-4 text-right">
                     <div className="text-sm font-medium text-slate-900">
-                      {formatCurrency(sale.sellingPrice, globalCurrency)}
+                      {formatCurrency(sale.sellingPrice, saleCurrency)}
                     </div>
-                    <div className="text-xs text-slate-500">{globalCurrency}</div>
+                    <div className="text-xs text-slate-500">{saleCurrency}</div>
                   </td>
                   <td className="table-cell py-3 px-4 text-right">
                     <div className="text-sm font-semibold text-emerald-600">
-                      {formatCurrency(effectiveTotal, globalCurrency)}
+                      {formatCurrency(effectiveTotal, saleCurrency)}
                     </div>
                     {sale.refundedQuantity && sale.refundedQuantity > 0 && (
                       <div className="text-xs text-amber-600 line-through mt-0.5">
-                        {formatCurrency(sale.quantity * sale.sellingPrice, globalCurrency)}
+                        {formatCurrency(sale.quantity * sale.sellingPrice, saleCurrency)}
                       </div>
                     )}
                   </td>
@@ -485,7 +413,7 @@ export default function SalesHistory({ sales, onUpdateSale, onRefundSale, global
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
                           </svg>
                         )}
-                        {formatCurrency(effectiveProfit, globalCurrency)}
+                        {formatCurrency(effectiveProfit, saleCurrency)}
                       </div>
                       {profitMargin !== 0 && (
                         <div className={`text-xs font-medium mt-0.5 flex items-center justify-end gap-1 ${
@@ -500,7 +428,7 @@ export default function SalesHistory({ sales, onUpdateSale, onRefundSale, global
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
                             </svg>
                           )}
-                          {profitMargin.toFixed(1)}%
+                          {profitMargin.toFixed(1)}% margin
                         </div>
                       )}
                     </td>
@@ -511,7 +439,7 @@ export default function SalesHistory({ sales, onUpdateSale, onRefundSale, global
                         {sale.batchDetails.length === 1 ? (
                           <div className="text-xs text-slate-700 bg-slate-100 px-2 py-1 rounded border border-slate-200">
                             <div className="font-medium">{formatNumber(sale.batchDetails[0].quantity)}</div>
-                            <div className="text-slate-600">{formatCurrency(sale.batchDetails[0].purchasePrice, globalCurrency)}</div>
+                            <div className="text-slate-600">{formatCurrency(sale.batchDetails[0].purchasePrice, saleCurrency)}</div>
                           </div>
                         ) : (
                           <div className="group relative">
@@ -522,7 +450,7 @@ export default function SalesHistory({ sales, onUpdateSale, onRefundSale, global
                               <div className="text-xs font-semibold text-slate-700 mb-1">Batch Details:</div>
                               {sale.batchDetails.map((batch, idx) => (
                                 <div key={idx} className="text-xs text-slate-600 py-1 border-b border-slate-100 last:border-0">
-                                  <span className="font-medium">Batch {idx + 1}:</span> {formatNumber(batch.quantity)} @ {formatCurrency(batch.purchasePrice, globalCurrency)}
+                                  <span className="font-medium">Batch {idx + 1}:</span> {formatNumber(batch.quantity)} @ {formatCurrency(batch.purchasePrice, saleCurrency)}
                                 </div>
                               ))}
                             </div>

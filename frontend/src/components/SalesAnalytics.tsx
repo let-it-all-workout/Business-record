@@ -1,5 +1,6 @@
 import { Sale } from '../types';
 import { formatCurrency, formatNumber } from '../utils/format';
+import { marginPercent, saleProfit, saleRevenue } from '../utils/saleMath';
 
 interface SalesAnalyticsProps {
   sales: Sale[];
@@ -23,39 +24,19 @@ interface SalesAnalyticsProps {
 
 export default function SalesAnalytics({ sales, globalCurrency, revenueViewMode = 'overall' }: SalesAnalyticsProps) {
 
-  // Filter valid sales (exclude fully refunded sales, but include partially refunded)
-  const validSales = sales.filter(s => s && s !== null);
+  const validSales = sales.filter((s) => s && (s.currency || globalCurrency) === globalCurrency);
 
   if (validSales.length === 0) {
     return null;
   }
 
-  // Calculate metrics accounting for refunds
-  const totalRevenue = validSales.reduce((sum, s) => {
-    const refundedQty = s.refundedQuantity || 0;
-    const effectiveQty = s.quantity - refundedQty;
-    return sum + (effectiveQty * s.sellingPrice);
-  }, 0);
-  
+  const totalRevenue = validSales.reduce((sum, s) => sum + saleRevenue(s), 0);
+  const totalProfit = validSales.reduce((sum, s) => sum + saleProfit(s), 0);
   const averageOrderValue = validSales.length > 0 ? totalRevenue / validSales.length : 0;
-  const averageProfitMargin = validSales.length > 0
-    ? validSales.reduce((sum, s) => {
-        const refundedQty = s.refundedQuantity || 0;
-        const effectiveQty = s.quantity - refundedQty;
-        const effectiveCost = s.purchasePrice * effectiveQty;
-        if (s.purchasePrice && s.purchasePrice > 0 && effectiveQty > 0) {
-          return sum + ((s.profit || 0) / effectiveCost) * 100;
-        }
-        return sum;
-      }, 0) / validSales.length
-    : 0;
+  const averageProfitMargin = marginPercent(totalProfit, totalRevenue);
 
-  // Top products by revenue (accounting for refunds)
   const productRevenue = validSales.reduce((acc, s) => {
-    const refundedQty = s.refundedQuantity || 0;
-    const effectiveQty = s.quantity - refundedQty;
-    const revenue = effectiveQty * s.sellingPrice;
-    acc[s.productName] = (acc[s.productName] || 0) + revenue;
+    acc[s.productName] = (acc[s.productName] || 0) + saleRevenue(s);
     return acc;
   }, {} as Record<string, number>);
 
@@ -75,10 +56,7 @@ export default function SalesAnalytics({ sales, globalCurrency, revenueViewMode 
       if (!salesByDay[date]) {
         salesByDay[date] = { revenue: 0, count: 0 };
       }
-      // Account for refunds in daily revenue
-      const refundedQty = s.refundedQuantity || 0;
-      const effectiveQty = s.quantity - refundedQty;
-      salesByDay[date].revenue += effectiveQty * s.sellingPrice;
+      salesByDay[date].revenue += saleRevenue(s);
       salesByDay[date].count += 1;
     });
 
@@ -114,7 +92,7 @@ export default function SalesAnalytics({ sales, globalCurrency, revenueViewMode 
             </p>
           </div>
           <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-            <p className="text-xs font-medium text-slate-600 mb-1">Avg. Profit Margin</p>
+            <p className="text-xs font-medium text-slate-600 mb-1">Profit Margin</p>
             <p className="text-2xl font-bold text-emerald-600">
               {averageProfitMargin.toFixed(1)}%
             </p>

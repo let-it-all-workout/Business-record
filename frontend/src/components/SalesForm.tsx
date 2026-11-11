@@ -1,13 +1,35 @@
 import { useState } from 'react';
 import { Product } from '../types';
+import { useAuth } from '../contexts/AuthContext';
+import { formatCurrency } from '../utils/format';
+import { marginPercent, roundMoney, wholeQuantity } from '../utils/saleMath';
 
 interface SalesFormProps {
   products: Product[];
+  currency: string;
   onSubmit: (productId: string, quantity: number, sellingPrice: number) => void;
   onCancel: () => void;
 }
 
-export default function SalesForm({ products, onSubmit, onCancel }: SalesFormProps) {
+function fifoPreview(product: Product, units: number) {
+  let remaining = units;
+  let cost = 0;
+  for (const batch of product.batches || []) {
+    if (remaining <= 0) break;
+    const take = Math.min(remaining, batch.remainingQuantity);
+    if (take <= 0) continue;
+    cost += take * batch.purchasePrice;
+    remaining -= take;
+  }
+  return {
+    cost: roundMoney(cost),
+    covered: remaining === 0 && (product.batches || []).length > 0,
+  };
+}
+
+export default function SalesForm({ products, currency, onSubmit, onCancel }: SalesFormProps) {
+  const { canSeeFinancialData } = useAuth();
+  const canSeeFinancial = canSeeFinancialData();
   const [selectedProductId, setSelectedProductId] = useState('');
   const [quantity, setQuantity] = useState('');
   const [sellingPrice, setSellingPrice] = useState('');
@@ -17,16 +39,16 @@ export default function SalesForm({ products, onSubmit, onCancel }: SalesFormPro
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const quantityNum = parseInt(quantity, 10);
-    const priceNum = parseFloat(sellingPrice);
+    const quantityNum = wholeQuantity(quantity);
+    const priceNum = Number(sellingPrice);
 
     if (!selectedProductId) {
       alert('Please select a product');
       return;
     }
 
-    if (isNaN(quantityNum) || quantityNum <= 0) {
-      alert('Please enter a valid quantity (greater than 0)');
+    if (!quantityNum) {
+      alert('Enter a whole number of units.');
       return;
     }
 
@@ -35,13 +57,25 @@ export default function SalesForm({ products, onSubmit, onCancel }: SalesFormPro
       return;
     }
 
-    if (isNaN(priceNum) || priceNum < 0) {
+    if (!Number.isFinite(priceNum) || priceNum < 0) {
       alert('Please enter a valid selling price (0 or greater)');
       return;
     }
 
-    onSubmit(selectedProductId, quantityNum, priceNum);
+    const preview = selectedProduct ? fifoPreview(selectedProduct, quantityNum) : null;
+    if (preview && !preview.covered) {
+      alert('Stock batches do not cover this quantity. Add stock before selling.');
+      return;
+    }
+
+    onSubmit(selectedProductId, quantityNum, roundMoney(priceNum));
   };
+
+  const units = wholeQuantity(quantity);
+  const priceNum = Number(sellingPrice);
+  const preview = selectedProduct && units ? fifoPreview(selectedProduct, units) : null;
+  const revenue = units && Number.isFinite(priceNum) ? roundMoney(units * priceNum) : 0;
+  const profit = preview?.covered && units ? roundMoney(revenue - preview.cost) : 0;
 
   if (availableProducts.length === 0) {
     return (
@@ -76,10 +110,10 @@ export default function SalesForm({ products, onSubmit, onCancel }: SalesFormPro
             id="product"
             value={selectedProductId}
             onChange={(e) => {
-              setSelectedProductId(e.target.value);
-              if (selectedProduct) {
-                setSellingPrice(selectedProduct.price.toString());
-              }
+              const productId = e.target.value;
+              setSelectedProductId(productId);
+              const product = availableProducts.find((item) => item.id === productId);
+              setSellingPrice(product ? String(product.price) : '');
             }}
             className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-transparent"
             required
@@ -87,7 +121,7 @@ export default function SalesForm({ products, onSubmit, onCancel }: SalesFormPro
             <option value="">Select a product</option>
             {availableProducts.map((product) => (
                 <option key={product.id} value={product.id}>
-                  {product.name} (Stock: {product.quantity}, Base Price: ${product.price.toFixed(2)})
+                  {product.name} (Stock: {product.quantity}, Base Price: {formatCurrency(product.price, currency)})
                 </option>
               ))}
           </select>
@@ -99,7 +133,7 @@ export default function SalesForm({ products, onSubmit, onCancel }: SalesFormPro
               <span className="font-medium">Available Stock:</span> {selectedProduct.quantity} units
             </p>
             <p className="text-sm text-gray-700">
-              <span className="font-medium">Base Price:</span> ${selectedProduct.price.toFixed(2)} per unit
+              <span className="font-medium">Base Price:</span> {formatCurrency(selectedProduct.price, currency)} per unit
             </p>
           </div>
         )}
@@ -116,6 +150,7 @@ export default function SalesForm({ products, onSubmit, onCancel }: SalesFormPro
             className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-transparent"
             placeholder="Enter quantity sold"
             min="1"
+            step="1"
             max={selectedProduct?.quantity || undefined}
             required
           />
@@ -136,10 +171,19 @@ export default function SalesForm({ products, onSubmit, onCancel }: SalesFormPro
             step="0.01"
             required
           />
-          {selectedProduct && sellingPrice && (
-            <p className="text-xs text-gray-500 mt-1">
-              Total: ${(parseFloat(sellingPrice || '0') * parseInt(quantity || '0', 10)).toFixed(2)}
-            </p>
+          {selectedProduct && units && Number.isFinite(priceNum) && (
+            <div className="mt-2 space-y-1">
+              <p className="text-xs text-gray-600">
+                Total: {formatCurrency(revenue, currency)}
+              </p>
+              {preview?.covered && canSeeFinancial ? (
+                <p className={`text-xs font-medium ${profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                  Profit: {formatCurrency(profit, currency)} ({marginPercent(profit, revenue).toFixed(1)}% margin)
+                </p>
+              ) : preview && !preview.covered ? (
+                <p className="text-xs text-amber-700">Stock batches do not cover this quantity.</p>
+              ) : null}
+            </div>
           )}
         </div>
       </div>

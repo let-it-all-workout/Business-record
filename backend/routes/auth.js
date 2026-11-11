@@ -2,7 +2,7 @@ import express from 'express';
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import rateLimit from 'express-rate-limit';
-import db from '../database/db-postgres.js';
+import db from '../database/index.js';
 import { validateUUIDParam, validateUUID, sanitizeString, validateEmail } from '../middleware/validation.js';
 import { handleError } from '../middleware/errorHandler.js';
 

@@ -9,12 +9,8 @@ interface BackupInfo {
 
 export default function BackupManager() {
   const { isSuperAdmin } = useAuth();
-  
-  // Only show to super admin
-  if (!isSuperAdmin) {
-    return null;
-  }
   const [backups, setBackups] = useState<BackupInfo[]>([]);
+  const [notice, setNotice] = useState('');
   const [isCreatingBackup, setIsCreatingBackup] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
 
@@ -28,8 +24,14 @@ export default function BackupManager() {
       if (response.ok) {
         const contentType = response.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
-          const backupList = await response.json();
-          setBackups(backupList);
+          const body = await response.json();
+          if (Array.isArray(body)) {
+            setBackups(body);
+            setNotice('');
+          } else {
+            setBackups(Array.isArray(body.backups) ? body.backups : []);
+            setNotice(typeof body.message === 'string' ? body.message : '');
+          }
         } else {
           throw new Error('Invalid response format');
         }
@@ -63,17 +65,16 @@ export default function BackupManager() {
     try {
       // Call backup API
       const response = await fetch('/api/backup', { method: 'POST' });
+      const body = await response.json().catch(() => ({}));
       if (response.ok) {
-        // Reload backups from API
         await loadBackups();
-        
         alert('Backup created successfully!');
       } else {
-        throw new Error('Failed to create backup');
+        throw new Error(body.error || 'Failed to create backup');
       }
     } catch (error) {
       console.error('Error creating backup:', error);
-      alert('Failed to create backup. Please ensure the server is running.');
+      alert(error instanceof Error ? error.message : 'Failed to create backup.');
     } finally {
       setIsCreatingBackup(false);
     }
@@ -193,6 +194,10 @@ export default function BackupManager() {
     input.click();
   };
 
+  if (!isSuperAdmin) {
+    return null;
+  }
+
   return (
     <div className="card p-6">
       <div className="flex items-center justify-between mb-6">
@@ -224,9 +229,12 @@ export default function BackupManager() {
       {/* Backup List */}
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-slate-900 mb-4">Available Backups</h3>
+        {notice && (
+          <p className="mb-4 text-sm text-slate-600">{notice}</p>
+        )}
         {backups.length === 0 ? (
           <div className="text-center py-8 text-slate-500">
-            <p>No backups found. Create your first backup to get started.</p>
+            <p>No file backups are stored in the app.</p>
           </div>
         ) : (
           <div className="space-y-2">

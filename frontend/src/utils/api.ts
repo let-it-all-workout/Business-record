@@ -1,9 +1,8 @@
 import { Product, Sale, GoodsInventory } from '../types';
 
-// Use environment variable for production, relative path for development
-// In production, VITE_API_URL should be set to your Railway backend URL
-// Normalize: remove trailing slash if present
-const rawApiUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
+// Same-origin `/api` in both Vite (proxied) and production (Express serves the SPA).
+// Set VITE_API_URL only if you split the UI onto another host.
+const rawApiUrl = import.meta.env.VITE_API_URL || '/api';
 const API_BASE_URL = rawApiUrl.endsWith('/') ? rawApiUrl.slice(0, -1) : rawApiUrl;
 
 // Helper function to get auth token

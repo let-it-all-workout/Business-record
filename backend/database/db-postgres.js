@@ -21,19 +21,18 @@ pool.on('connect', () => {
   console.log('✅ Connected to PostgreSQL database');
 });
 
-pool.on('error', (err) => {
-  console.error('❌ Unexpected error on idle PostgreSQL client', err);
-  process.exit(-1);
-});
+if (process.env.DATABASE_URL) {
+  pool.on('error', (err) => {
+    console.error('❌ Unexpected error on idle PostgreSQL client', err);
+    process.exit(1);
+  });
+}
 
 // Initialize database schema
 async function initializeDatabase() {
   try {
-    // Check if DATABASE_URL is set
     if (!process.env.DATABASE_URL) {
-      console.log('⚠️  DATABASE_URL not set - using SQLite fallback or local PostgreSQL');
-      // In development, you might want to use local PostgreSQL
-      // For now, we'll just log a warning
+      return;
     }
 
     const schemaPath = join(__dirname, 'schema-postgres.sql');

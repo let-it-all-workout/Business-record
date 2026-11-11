@@ -1,10 +1,13 @@
 import 'dotenv/config';
 import http from 'node:http';
 import { createApp } from './app.js';
+import { databaseReady } from '../database/index.js';
 
 const PORT = process.env.PORT || 3002;
 const app = createApp();
 const server = http.createServer(app);
+
+await databaseReady;
 
 server.listen(PORT, '0.0.0.0', () => {
   const db = process.env.DATABASE_URL ? 'PostgreSQL' : 'PostgreSQL (DATABASE_URL is not set)';

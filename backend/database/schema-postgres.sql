@@ -1,12 +1,9 @@
 -- NovaGadget Inventory Management Database Schema
 -- PostgreSQL Version
 
--- Enable UUID extension for generating IDs
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
 -- Users table (must be created first due to foreign key dependencies)
 CREATE TABLE IF NOT EXISTS users (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     username TEXT UNIQUE NOT NULL,
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
@@ -22,7 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- Businesses table (Multi-tenant support)
 CREATE TABLE IF NOT EXISTS businesses (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     owner_id UUID NOT NULL, -- User who created/owns this business
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -36,7 +33,7 @@ ALTER TABLE users ADD CONSTRAINT fk_users_business
 
 -- Products table
 CREATE TABLE IF NOT EXISTS products (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     category TEXT,
     price DECIMAL(10, 2) NOT NULL,
@@ -49,7 +46,7 @@ CREATE TABLE IF NOT EXISTS products (
 
 -- Stock batches table
 CREATE TABLE IF NOT EXISTS stock_batches (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     product_id UUID NOT NULL,
     purchase_date DATE NOT NULL,
     quantity INTEGER NOT NULL,
@@ -61,7 +58,7 @@ CREATE TABLE IF NOT EXISTS stock_batches (
 
 -- Stock history table
 CREATE TABLE IF NOT EXISTS stock_history (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     product_id UUID NOT NULL,
     batch_id UUID,
     date DATE NOT NULL,
@@ -74,7 +71,7 @@ CREATE TABLE IF NOT EXISTS stock_history (
 
 -- Sales table
 CREATE TABLE IF NOT EXISTS sales (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     product_id UUID,  -- NULL allowed for goods inventory sales
     product_name TEXT NOT NULL,
     inventory_id UUID,
@@ -97,7 +94,7 @@ CREATE TABLE IF NOT EXISTS sales (
 
 -- Sale batch details table (many-to-many relationship)
 CREATE TABLE IF NOT EXISTS sale_batch_details (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sale_id UUID NOT NULL,
     batch_id UUID NOT NULL,
     quantity INTEGER NOT NULL,
@@ -109,7 +106,7 @@ CREATE TABLE IF NOT EXISTS sale_batch_details (
 
 -- Refund history table
 CREATE TABLE IF NOT EXISTS refund_history (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sale_id UUID NOT NULL,
     date DATE NOT NULL,
     quantity INTEGER NOT NULL,
@@ -119,7 +116,7 @@ CREATE TABLE IF NOT EXISTS refund_history (
 
 -- Goods inventories table
 CREATE TABLE IF NOT EXISTS goods_inventories (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     date DATE NOT NULL,
     business_id UUID NOT NULL, -- Which business owns this inventory
@@ -130,7 +127,7 @@ CREATE TABLE IF NOT EXISTS goods_inventories (
 
 -- Goods table (products in goods inventories)
 CREATE TABLE IF NOT EXISTS goods (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     inventory_id UUID NOT NULL,
     name TEXT NOT NULL,
     quantity INTEGER NOT NULL,
@@ -153,7 +150,7 @@ CREATE TABLE IF NOT EXISTS settings (
 
 -- Sessions table (for token-based authentication)
 CREATE TABLE IF NOT EXISTS sessions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL,
     token TEXT UNIQUE NOT NULL,
     expires_at TIMESTAMP NOT NULL,
@@ -163,7 +160,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 -- Activity logs table
 CREATE TABLE IF NOT EXISTS activity_logs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL,
     action TEXT NOT NULL,
     resource_type TEXT,

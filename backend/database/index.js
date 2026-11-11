@@ -8,6 +8,8 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-const db = (await import('./db-postgres.js')).default;
+const postgres = await import('./db-postgres.js');
+const db = postgres.default;
+export const databaseReady = postgres.databaseReady;
 export const engine = 'postgres';
 export default db;

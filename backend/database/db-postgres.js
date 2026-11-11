@@ -3,6 +3,7 @@ const { Pool } = pkg;
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { statementsFromSchema } from './schema-sql.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -13,7 +14,7 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
   max: 20, // Maximum number of clients in the pool
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: 15000,
 });
 
 // Test connection
@@ -37,30 +38,26 @@ async function initializeDatabase() {
 
     const schemaPath = join(__dirname, 'schema-postgres.sql');
     const schema = readFileSync(schemaPath, 'utf8');
-    
-    // Execute schema (split by semicolons and execute each statement)
-    const statements = schema
-      .split(';')
-      .map(s => s.trim())
-      .filter(s => s.length > 0 && !s.startsWith('--'));
+    const statements = statementsFromSchema(schema);
+    let failed = 0;
 
     for (const statement of statements) {
       try {
-        if (statement.trim()) {
-          await pool.query(statement);
-        }
+        await pool.query(statement);
       } catch (error) {
-        // Ignore "already exists" errors
-        if (!error.message.includes('already exists') && 
-            !error.message.includes('duplicate') &&
-            !error.message.includes('relation') &&
-            !error.message.includes('constraint')) {
-          console.warn(`⚠️  Schema statement warning: ${error.message.substring(0, 100)}`);
-        }
+        const message = error.message || '';
+        if (message.includes('already exists') || message.includes('duplicate')) continue;
+        failed += 1;
+        console.error(`Schema statement failed: ${message}`);
+        console.error(statement.slice(0, 180));
       }
     }
-    
-    console.log('✅ PostgreSQL schema initialized');
+
+    if (failed > 0) {
+      console.error(`PostgreSQL schema finished with ${failed} failed statement(s)`);
+    } else {
+      console.log('PostgreSQL schema initialized');
+    }
   } catch (error) {
     console.error('❌ Error initializing PostgreSQL database:', error.message);
     // Don't throw - allow server to start even if schema has minor issues
@@ -68,10 +65,8 @@ async function initializeDatabase() {
   }
 }
 
-// Initialize on first load (but don't block)
-initializeDatabase().catch(err => {
-  console.error('❌ Fatal error initializing database:', err.message);
-  // Don't exit - let the server start and handle errors gracefully
+export const databaseReady = initializeDatabase().catch((err) => {
+  console.error('Fatal error initializing database:', err.message);
 });
 
 // Helper functions to match better-sqlite3 API for easier migration

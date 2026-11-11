@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import AuthShell from './AuthShell';
 
 // Get API base URL (same logic as api.ts)
 // Normalize: remove trailing slash if present
@@ -65,13 +66,7 @@ export default function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () 
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
-      <div className="card max-w-md w-full p-8">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-slate-900 mb-2">Business Record</h1>
-          <p className="text-slate-600">Create Your Business Account</p>
-        </div>
-
+    <AuthShell title="Create your shop" subtitle="You become the admin of this business.">
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
@@ -149,7 +144,7 @@ export default function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () 
               placeholder="Choose a strong password"
               minLength={6}
             />
-            <p className="text-xs text-slate-500 mt-1">Minimum 6 characters</p>
+            <p className="text-xs text-slate-500 mt-1">Use upper and lower case, a number, and a symbol.</p>
           </div>
 
           <button
@@ -157,20 +152,20 @@ export default function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () 
             disabled={loading}
             className="btn-primary w-full"
           >
-            {loading ? 'Creating Account...' : 'Create Account'}
+            {loading ? 'Creating account...' : 'Create account'}
           </button>
         </form>
 
         <div className="mt-6 text-center">
           <button
+            type="button"
             onClick={onSwitchToLogin}
-            className="text-sm text-slate-600 hover:text-slate-900"
+            className="text-sm font-medium text-teal-800 hover:text-teal-950"
           >
-            Already have an account? Login
+            Already registered? Sign in
           </button>
         </div>
-      </div>
-    </div>
+    </AuthShell>
   );
 }
 

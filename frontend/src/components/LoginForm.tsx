@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import AuthShell from './AuthShell';
 
 export default function LoginForm({ onSwitchToRegister }: { onSwitchToRegister?: () => void }) {
   const [username, setUsername] = useState('');
@@ -24,14 +25,8 @@ export default function LoginForm({ onSwitchToRegister }: { onSwitchToRegister?:
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
-      <div className="card max-w-md w-full p-8">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-slate-900 mb-2">Business Record</h1>
-          <p className="text-slate-600">Inventory Management System</p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-6">
+    <AuthShell title="Sign in" subtitle="Open your shop records.">
+        <form onSubmit={handleSubmit} className="space-y-5">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
               <strong>Error:</strong> {error}
@@ -70,22 +65,22 @@ export default function LoginForm({ onSwitchToRegister }: { onSwitchToRegister?:
             disabled={loading}
             className="btn-primary w-full"
           >
-            {loading ? 'Logging in...' : 'Login'}
+            {loading ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
 
         {onSwitchToRegister && (
           <div className="mt-6 text-center">
             <button
+              type="button"
               onClick={onSwitchToRegister}
-              className="text-sm text-slate-600 hover:text-slate-900"
+              className="text-sm font-medium text-teal-800 hover:text-teal-950"
             >
-              Don't have an account? Sign Up
+              New shop? Create an account
             </button>
           </div>
         )}
-      </div>
-    </div>
+    </AuthShell>
   );
 }
 

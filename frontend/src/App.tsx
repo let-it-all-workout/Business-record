@@ -33,6 +33,7 @@ import PINVerification from './components/PINVerification';
 import RegisterForm from './components/RegisterForm';
 import SuperAdminPanel from './components/SuperAdminPanel';
 import UserManagement from './components/UserManagement';
+import ThemeToggle from './components/ThemeToggle';
 import { useAuth } from './contexts/AuthContext';
 import { notificationService } from './utils/notifications';
 import { generateSalesReport, generateFinancialReport } from './utils/pdfReports';
@@ -737,7 +738,7 @@ function App() {
   // Show loading state
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900 mx-auto mb-4"></div>
           <p className="text-slate-600">Loading...</p>
@@ -747,7 +748,7 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 safe-top safe-bottom">
+    <div className="min-h-screen safe-top safe-bottom">
       {successMessage && (
         <SuccessToast
           message={successMessage}
@@ -756,79 +757,27 @@ function App() {
       )}
       
       {/* Professional Header Bar */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-sm safe-top relative">
+      <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-xl border-b border-slate-200/80 shadow-sm safe-top">
+        <div className="h-0.5 bg-teal-700" />
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
-          <div className="flex items-center justify-between h-16 md:h-20">
-            <div className="flex items-center gap-4 md:gap-8">
-              <div>
-                <h1 className="text-xl md:text-2xl font-bold text-slate-900 tracking-tight">
-                  Business Record
-                </h1>
-                <p className="text-xs text-slate-500 font-medium hidden sm:block">
-                  Inventory Management System
-                  {user && <span className="ml-2">• {user.fullName} ({user.role})</span>}
-                  {business && <span className="ml-2">• {business.name}</span>}
-                  {isSuperAdmin && selectedBusinessId && (
-                    <span className="ml-2 text-blue-600">
-                      • Viewing: {businesses.find(b => b.id === selectedBusinessId)?.name || 'Selected Business'}
-                    </span>
-                  )}
-                  {isSuperAdmin && !selectedBusinessId && (
-                    <span className="ml-2 text-slate-500">• Select a business to view details</span>
-                  )}
-                </p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-3">
+            <div className="min-w-0 flex-1 basis-48 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-teal-700 text-white grid place-items-center font-bold shrink-0">BR</div>
+              <div className="min-w-0">
+              <h1 className="text-lg sm:text-xl font-semibold text-slate-900 tracking-tight truncate">
+                Business Record
+              </h1>
+              <p className="text-xs text-slate-500 font-medium truncate">
+                {user ? `${user.fullName} · ${user.role}` : 'Inventory Management'}
+                {business ? ` · ${business.name}` : ''}
+                {isSuperAdmin && selectedBusinessId
+                  ? ` · ${businesses.find(b => b.id === selectedBusinessId)?.name || 'Selected business'}`
+                  : ''}
+              </p>
               </div>
-              
-              {/* Navigation Tabs */}
-              <nav className="hidden md:flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
-                <button
-                  onClick={() => setViewMode('products')}
-                  className={`px-5 py-2.5 font-semibold text-sm rounded-lg transition-all duration-200 ${
-                    viewMode === 'products'
-                      ? 'bg-white text-slate-900 shadow-md'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Products & Inventory
-                </button>
-                <button
-                  onClick={() => setViewMode('sales')}
-                  className={`px-5 py-2.5 font-semibold text-sm rounded-lg transition-all duration-200 ${
-                    viewMode === 'sales'
-                      ? 'bg-white text-slate-900 shadow-md'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Sales & Analytics
-                </button>
-              </nav>
-              
-              {/* Mobile Navigation */}
-              <nav className="md:hidden flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
-                <button
-                  onClick={() => setViewMode('products')}
-                  className={`px-4 py-2 font-semibold text-xs rounded-lg transition-all duration-200 ${
-                    viewMode === 'products'
-                      ? 'bg-white text-slate-900 shadow-md'
-                      : 'text-slate-600'
-                  }`}
-                >
-                  Products
-                </button>
-                <button
-                  onClick={() => setViewMode('sales')}
-                  className={`px-4 py-2 font-semibold text-xs rounded-lg transition-all duration-200 ${
-                    viewMode === 'sales'
-                      ? 'bg-white text-slate-900 shadow-md'
-                      : 'text-slate-600'
-                  }`}
-                >
-                  Sales
-                </button>
-              </nav>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1 sm:gap-2 ml-auto">
               {/* Super Admin: Switch Business Button */}
               {isSuperAdmin && selectedBusinessId && (
                 <button
@@ -847,8 +796,10 @@ function App() {
                 </button>
               )}
 
+              <ThemeToggle />
+
               {/* Currency Selector */}
-              <div className="hidden lg:flex items-center gap-2 px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200">
+              <div className="hidden lg:flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-xl border border-slate-200">
                 <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
@@ -974,7 +925,7 @@ function App() {
                     placeholder="Search products..."
                     value={globalSearchQuery}
                     onChange={(e) => setGlobalSearchQuery(e.target.value)}
-                    className="pl-10 pr-4 py-2 w-64 bg-white border border-slate-300 rounded-xl text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="pl-10 pr-8 py-2 w-36 lg:w-56 bg-white border border-slate-300 rounded-xl text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                   <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -1037,6 +988,31 @@ function App() {
               </button>
             </div>
           </div>
+
+          <nav className="flex items-center gap-1 overflow-x-auto pb-3">
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+              <button
+                onClick={() => setViewMode('products')}
+                className={`shrink-0 px-3 sm:px-5 py-2 font-semibold text-sm rounded-lg transition-colors duration-200 ${
+                  viewMode === 'products'
+                    ? 'bg-teal-700 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Products & Inventory
+              </button>
+              <button
+                onClick={() => setViewMode('sales')}
+                className={`shrink-0 px-3 sm:px-5 py-2 font-semibold text-sm rounded-lg transition-colors duration-200 ${
+                  viewMode === 'sales'
+                    ? 'bg-teal-700 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Sales & Analytics
+              </button>
+            </div>
+          </nav>
         </div>
       </header>
 
@@ -1062,9 +1038,9 @@ function App() {
       {isSuperAdmin && selectedBusinessId && (
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl py-6">
           <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-blue-900">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-lg font-bold text-blue-900 break-words">
                   Viewing: {businesses.find(b => b.id === selectedBusinessId)?.name || 'Selected Business'}
                 </h2>
                 <p className="text-sm text-blue-700 mt-1">
@@ -1092,14 +1068,14 @@ function App() {
         {/* Statistics Dashboard */}
         <div className="mb-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
           <div className="stat-card">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
                 <p className="stat-label">Total Products</p>
                 <p className="stat-value">{totalProducts}</p>
                 <p className="text-sm text-slate-500 mt-1">{formatNumber(totalStock)} units in stock</p>
               </div>
-              <div className="p-3 bg-slate-100 rounded-lg">
-                <svg className="w-6 h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="p-3 bg-teal-50 text-teal-700 rounded-xl shrink-0">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                 </svg>
               </div>
@@ -1107,14 +1083,14 @@ function App() {
           </div>
 
           <div className="stat-card">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
                 <p className="stat-label">Inventories</p>
                 <p className="stat-value">{totalInventories}</p>
                 <p className="text-sm text-slate-500 mt-1">Active inventory sections</p>
               </div>
-              <div className="p-3 bg-slate-100 rounded-lg">
-                <svg className="w-6 h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="p-3 bg-sky-50 text-sky-700 rounded-xl shrink-0">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                 </svg>
               </div>
@@ -1122,9 +1098,9 @@ function App() {
           </div>
 
           <div className="stat-card">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center justify-between mb-1">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
                   <p className="stat-label">
                     {revenueViewMode === 'yearly' ? `${new Date().getFullYear()} Revenue` : 'Total Revenue'}
                   </p>
@@ -1161,8 +1137,8 @@ function App() {
                   {otherCurrencyCount > 0 ? ` · ${otherCurrencyCount} in another currency not included` : ''}
                 </p>
               </div>
-              <div className="p-3 bg-slate-100 rounded-lg">
-                <svg className="w-6 h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="p-3 bg-amber-50 text-amber-700 rounded-xl shrink-0">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
@@ -1171,8 +1147,8 @@ function App() {
 
           {canSeeFinancialData() && (
             <div className="stat-card">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
                   <p className="stat-label">Total Profit</p>
                   <p className={`stat-value flex items-center gap-1 flex-wrap ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                     {totalProfit >= 0 ? (
@@ -1205,7 +1181,7 @@ function App() {
                     )}
                   </p>
                 </div>
-                <div className={`p-3 rounded-lg ${totalProfit >= 0 ? 'bg-emerald-100' : 'bg-red-100'}`}>
+                <div className={`p-3 rounded-xl shrink-0 ${totalProfit >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
                   {totalProfit >= 0 ? (
                     <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
@@ -1219,32 +1195,6 @@ function App() {
               </div>
             </div>
           )}
-        </div>
-
-        {/* Mobile Navigation */}
-        <div className="md:hidden mb-6">
-          <div className="flex gap-2 bg-white p-1.5 rounded-xl shadow-sm border border-slate-200">
-            <button
-              onClick={() => setViewMode('products')}
-              className={`flex-1 px-4 py-2.5 font-semibold text-sm rounded-lg transition-all duration-200 ${
-                viewMode === 'products'
-                  ? 'bg-slate-900 text-white shadow-md'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-            >
-              Products
-            </button>
-            <button
-              onClick={() => setViewMode('sales')}
-              className={`flex-1 px-4 py-2.5 font-semibold text-sm rounded-lg transition-all duration-200 ${
-                viewMode === 'sales'
-                  ? 'bg-slate-900 text-white shadow-md'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-            >
-              Sales
-            </button>
-          </div>
         </div>
 
         {viewMode === 'products' && (

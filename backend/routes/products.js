@@ -28,36 +28,50 @@ router.get('/', verifyToken, async (req, res) => {
       ORDER BY created_at DESC
     `).all(filter.businessId);
 
-    // Get batches for each product (async)
-    const productsWithBatches = await Promise.all(
-      products.map(async (product) => {
-        const batches = await db.prepare(`
-          SELECT * FROM stock_batches WHERE product_id = $1 ORDER BY purchase_date ASC
-        `).all(product.id);
+    const ids = products.map((product) => product.id);
+    const [batches, stockHistory] = ids.length === 0 ? [[], []] : await Promise.all([
+      db.prepare(`
+        SELECT * FROM stock_batches
+        WHERE product_id = ANY($1::uuid[])
+        ORDER BY purchase_date ASC
+      `).all(ids),
+      db.prepare(`
+        SELECT * FROM stock_history
+        WHERE product_id = ANY($1::uuid[])
+        ORDER BY date DESC
+      `).all(ids),
+    ]);
 
-        const stockHistory = await db.prepare(`
-          SELECT * FROM stock_history WHERE product_id = $1 ORDER BY date DESC
-        `).all(product.id);
+    const batchesByProduct = new Map();
+    for (const batch of batches) {
+      const list = batchesByProduct.get(batch.product_id);
+      if (list) list.push(batch);
+      else batchesByProduct.set(batch.product_id, [batch]);
+    }
+    const historyByProduct = new Map();
+    for (const history of stockHistory) {
+      const list = historyByProduct.get(history.product_id);
+      if (list) list.push(history);
+      else historyByProduct.set(history.product_id, [history]);
+    }
 
-        return {
-          ...product,
-          batches: batches.map(batch => ({
-            id: batch.id,
-            purchaseDate: batch.purchase_date,
-            quantity: batch.quantity,
-            remainingQuantity: batch.remaining_quantity,
-            purchasePrice: batch.purchase_price,
-          })),
-          stockHistory: stockHistory.map(history => ({
-            id: history.id,
-            date: history.date,
-            quantity: history.quantity,
-            type: history.type,
-            batchId: history.batch_id,
-          })),
-        };
-      })
-    );
+    const productsWithBatches = products.map((product) => ({
+      ...product,
+      batches: (batchesByProduct.get(product.id) || []).map(batch => ({
+        id: batch.id,
+        purchaseDate: batch.purchase_date,
+        quantity: batch.quantity,
+        remainingQuantity: batch.remaining_quantity,
+        purchasePrice: batch.purchase_price,
+      })),
+      stockHistory: (historyByProduct.get(product.id) || []).map(history => ({
+        id: history.id,
+        date: history.date,
+        quantity: history.quantity,
+        type: history.type,
+        batchId: history.batch_id,
+      })),
+    }));
 
     res.json(productsWithBatches);
   } catch (error) {

@@ -66,7 +66,7 @@ export function createApp() {
   }));
 
   app.use(compression());
-  app.use(express.json({ limit: '1mb' }));
+  app.use('/api', express.json({ limit: '1mb' }));
 
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');

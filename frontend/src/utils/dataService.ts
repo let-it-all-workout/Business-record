@@ -1,34 +1,9 @@
 import { Product, Sale, GoodsInventory } from '../types';
 import { productsAPI, salesAPI, inventoryAPI, settingsAPI } from './api';
 
-// Get API base URL (same logic as api.ts)
-// Normalize: remove trailing slash if present
-const rawApiUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '/api');
-const API_BASE_URL = rawApiUrl.endsWith('/') ? rawApiUrl.slice(0, -1) : rawApiUrl;
-
-// Helper function to check API availability and throw meaningful errors
-const ensureAPI = async () => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/health`, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-    });
-    if (!response.ok) {
-      throw new Error('API server is not responding. Please check your backend connection.');
-    }
-  } catch (error) {
-    if (error instanceof TypeError && (error.message.includes('fetch') || error.message.includes('Failed to fetch'))) {
-      const apiUrl = API_BASE_URL || 'backend server';
-      throw new Error(`Cannot connect to API server at ${apiUrl}. Please check your VITE_API_URL environment variable and ensure the backend is running.`);
-    }
-    throw error;
-  }
-};
-
 export const dataService = {
   // Products
   async getProducts(): Promise<Product[]> {
-    await ensureAPI();
     try {
       return await productsAPI.getAll();
     } catch (error) {
@@ -41,7 +16,6 @@ export const dataService = {
     stockHistory?: Product['stockHistory']; 
     batches?: Product['batches'] 
   }): Promise<string> {
-    await ensureAPI();
     try {
       const result = await productsAPI.create(product);
       return result.id;
@@ -52,7 +26,6 @@ export const dataService = {
   },
 
   async updateProduct(id: string, product: Partial<Product>): Promise<void> {
-    await ensureAPI();
     try {
       await productsAPI.update(id, product);
     } catch (error) {
@@ -62,7 +35,6 @@ export const dataService = {
   },
 
   async deleteProduct(id: string): Promise<void> {
-    await ensureAPI();
     try {
       await productsAPI.delete(id);
     } catch (error) {
@@ -72,7 +44,6 @@ export const dataService = {
   },
 
   async addStock(productId: string, quantity: number, purchasePrice: number, purchaseDate: string, batchId?: string): Promise<void> {
-    await ensureAPI();
     try {
       await productsAPI.addStock(productId, quantity, purchasePrice, purchaseDate, batchId);
     } catch (error) {
@@ -83,7 +54,6 @@ export const dataService = {
 
   // Sales
   async getSales(): Promise<Sale[]> {
-    await ensureAPI();
     try {
       return await salesAPI.getAll();
     } catch (error) {
@@ -93,7 +63,6 @@ export const dataService = {
   },
 
   async createSale(sale: Omit<Sale, 'id' | 'date'>): Promise<string> {
-    await ensureAPI();
     try {
       const result = await salesAPI.create(sale);
       return result.id;
@@ -104,7 +73,6 @@ export const dataService = {
   },
 
   async updateSale(id: string, sale: Partial<Sale>): Promise<void> {
-    await ensureAPI();
     try {
       await salesAPI.update(id, sale);
     } catch (error) {
@@ -120,7 +88,6 @@ export const dataService = {
     stockRestored?: boolean;
     updatedStock?: any;
   }> {
-    await ensureAPI();
     try {
       return await salesAPI.refund(id, quantity);
     } catch (error) {
@@ -131,7 +98,6 @@ export const dataService = {
 
   // Inventory
   async getInventories(): Promise<GoodsInventory[]> {
-    await ensureAPI();
     try {
       return await inventoryAPI.getAll();
     } catch (error) {
@@ -141,7 +107,6 @@ export const dataService = {
   },
 
   async createInventory(inventory: Omit<GoodsInventory, 'id' | 'createdAt'>): Promise<string> {
-    await ensureAPI();
     try {
       const result = await inventoryAPI.create(inventory);
       return result.id;
@@ -152,7 +117,6 @@ export const dataService = {
   },
 
   async updateInventory(id: string, inventory: Partial<GoodsInventory>): Promise<void> {
-    await ensureAPI();
     try {
       await inventoryAPI.update(id, inventory);
     } catch (error) {
@@ -162,7 +126,6 @@ export const dataService = {
   },
 
   async deleteInventory(id: string): Promise<void> {
-    await ensureAPI();
     try {
       await inventoryAPI.delete(id);
     } catch (error) {
@@ -173,7 +136,6 @@ export const dataService = {
 
   // Settings
   async getCurrency(): Promise<string> {
-    await ensureAPI();
     try {
       const currency = await settingsAPI.get('currency');
       return currency || 'USD';
@@ -185,7 +147,6 @@ export const dataService = {
   },
 
   async setCurrency(currency: string): Promise<void> {
-    await ensureAPI();
     try {
       await settingsAPI.set('currency', currency);
     } catch (error) {

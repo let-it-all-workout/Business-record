@@ -28,29 +28,34 @@ router.get('/', verifyToken, async (req, res) => {
       ORDER BY created_at DESC
     `).all(filter.businessId);
 
-    // Get goods for each inventory (async)
-    const inventoriesWithGoods = await Promise.all(
-      inventories.map(async (inventory) => {
-        const goods = await db.prepare(`
-          SELECT * FROM goods WHERE inventory_id = $1 ORDER BY created_at ASC
-        `).all(inventory.id);
+    const ids = inventories.map((inventory) => inventory.id);
+    const goods = ids.length === 0 ? [] : await db.prepare(`
+      SELECT * FROM goods
+      WHERE inventory_id = ANY($1::uuid[])
+      ORDER BY created_at ASC
+    `).all(ids);
 
-        return {
-          id: inventory.id,
-          name: inventory.name,
-          date: inventory.date,
-          createdAt: inventory.created_at,
-          goods: goods.map(good => ({
-            id: good.id,
-            name: good.name,
-            quantity: good.quantity,
-            remainingQuantity: good.remaining_quantity,
-            unitPrice: good.unit_price,
-            currency: good.currency,
-          })),
-        };
-      })
-    );
+    const goodsByInventory = new Map();
+    for (const good of goods) {
+      const list = goodsByInventory.get(good.inventory_id);
+      if (list) list.push(good);
+      else goodsByInventory.set(good.inventory_id, [good]);
+    }
+
+    const inventoriesWithGoods = inventories.map((inventory) => ({
+      id: inventory.id,
+      name: inventory.name,
+      date: inventory.date,
+      createdAt: inventory.created_at,
+      goods: (goodsByInventory.get(inventory.id) || []).map(good => ({
+        id: good.id,
+        name: good.name,
+        quantity: good.quantity,
+        remainingQuantity: good.remaining_quantity,
+        unitPrice: good.unit_price,
+        currency: good.currency,
+      })),
+    }));
 
     res.json(inventoriesWithGoods);
   } catch (error) {

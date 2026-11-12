@@ -8,25 +8,53 @@ import { statementsFromSchema } from './schema-sql.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Create connection pool
+// One small pool. Neon closes idle sockets; exiting on that error restarts the
+// whole site, which is the long wait after a quiet minute.
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-  max: 20, // Maximum number of clients in the pool
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 15000,
+  max: 8,
+  idleTimeoutMillis: 20000,
+  connectionTimeoutMillis: 10000,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10000,
 });
 
-// Test connection
+let loggedConnect = false;
 pool.on('connect', () => {
+  if (loggedConnect) return;
+  loggedConnect = true;
   console.log('✅ Connected to PostgreSQL database');
 });
 
-if (process.env.DATABASE_URL) {
-  pool.on('error', (err) => {
-    console.error('❌ Unexpected error on idle PostgreSQL client', err);
-    process.exit(1);
-  });
+pool.on('error', (err) => {
+  console.error('Idle PostgreSQL client error:', err.message);
+});
+
+// Neon suspends after about 5 minutes without a query. Ping while this
+// process is up so the next click does not wait for compute to wake.
+function startKeepAlive() {
+  if (!process.env.DATABASE_URL) return;
+  const timer = setInterval(() => {
+    pool.query('SELECT 1').catch((err) => {
+      console.error('Database keep-alive failed:', err.message);
+    });
+  }, 4 * 60 * 1000);
+  timer.unref();
+}
+
+async function schemaAlreadyPresent() {
+  const ready = await pool.query(`
+    SELECT
+      to_regclass('public.users') AS users,
+      to_regclass('public.businesses') AS businesses,
+      to_regclass('public.products') AS products,
+      to_regclass('public.sales') AS sales,
+      to_regclass('public.goods') AS goods,
+      to_regclass('public.sessions') AS sessions
+  `);
+  const row = ready.rows[0] || {};
+  return Boolean(row.users && row.businesses && row.products && row.sales && row.goods && row.sessions);
 }
 
 // Initialize database schema
@@ -35,6 +63,23 @@ async function initializeDatabase() {
     if (!process.env.DATABASE_URL) {
       return;
     }
+
+    let present = null;
+    for (let attempt = 0; attempt < 2 && present === null; attempt += 1) {
+      try {
+        present = await schemaAlreadyPresent();
+      } catch (error) {
+        console.error('Schema check failed:', error.message);
+        if (attempt === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+      }
+    }
+    if (present === true) {
+      console.log('PostgreSQL schema already present');
+      return;
+    }
+    if (present === null) return;
 
     const schemaPath = join(__dirname, 'schema-postgres.sql');
     const schema = readFileSync(schemaPath, 'utf8');
@@ -50,6 +95,9 @@ async function initializeDatabase() {
         failed += 1;
         console.error(`Schema statement failed: ${message}`);
         console.error(statement.slice(0, 180));
+        if (message.includes('timeout') || message.includes('ECONN') || message.includes('ENOTFOUND')) {
+          break;
+        }
       }
     }
 
@@ -62,6 +110,8 @@ async function initializeDatabase() {
     console.error('❌ Error initializing PostgreSQL database:', error.message);
     // Don't throw - allow server to start even if schema has minor issues
     console.error('⚠️  Continuing despite schema errors - some features may not work');
+  } finally {
+    startKeepAlive();
   }
 }
 

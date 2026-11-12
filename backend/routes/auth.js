@@ -8,6 +8,50 @@ import { handleError } from '../middleware/errorHandler.js';
 
 const router = express.Router();
 
+// The dashboard fires several requests at once. Reuse a fresh session row for
+// a few seconds so those requests share one database lookup.
+const sessionCache = new Map();
+const SESSION_CACHE_MS = 20000;
+const SESSION_CACHE_MAX = 200;
+const SESSION_SQL = `
+  SELECT s.*, u.username, u.email, u.full_name, u.role, u.is_active, u.business_id,
+         b.name AS business_name
+  FROM sessions s
+  JOIN users u ON s.user_id = u.id
+  LEFT JOIN businesses b ON b.id = u.business_id
+  WHERE s.token = $1
+`;
+
+function bearerToken(req) {
+  const authHeader = req.headers.authorization || req.headers.Authorization;
+  return authHeader?.replace(/^Bearer\s+/i, '') || '';
+}
+
+function readCachedSession(token) {
+  const hit = sessionCache.get(token);
+  if (!hit) return null;
+  if (Date.now() - hit.storedAt > SESSION_CACHE_MS) {
+    sessionCache.delete(token);
+    return null;
+  }
+  return hit.session;
+}
+
+function storeCachedSession(token, session) {
+  if (!token || !session) return;
+  if (sessionCache.size >= SESSION_CACHE_MAX) {
+    const oldest = sessionCache.keys().next().value;
+    sessionCache.delete(oldest);
+  }
+  sessionCache.set(token, { session, storedAt: Date.now() });
+}
+
+function forgetCachedSession(token) {
+  if (!token) return;
+  sessionCache.delete(token);
+  sessionCache.delete(token.trim());
+}
+
 // Default user initialization removed - use admin management script instead
 
 // Rate limiting for authentication endpoints
@@ -248,31 +292,28 @@ router.post('/login', loginLimiter, async (req, res) => {
       // Password migration completed (no sensitive info logged)
     }
 
-    // Create session
+    // Create session and load the shop together. Last login does not block the reply.
     const token = generateToken();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
 
-    // Insert session (PostgreSQL will generate UUID)
-    const sessionResult = await db.prepare(`
+    const sessionInsert = db.prepare(`
       INSERT INTO sessions (user_id, token, expires_at)
       VALUES ($1, $2, $3)
       RETURNING id
     `).get(user.id, token, expiresAt);
 
-    // Update last login
-    await db.prepare(`
-      UPDATE users SET last_login = NOW() WHERE id = $1
-    `).run(user.id);
+    const businessLookup = user.business_id
+      ? db.prepare('SELECT id, name FROM businesses WHERE id = $1').get(user.business_id).catch((error) => {
+          console.error('Error fetching business:', error.message);
+          return null;
+        })
+      : Promise.resolve(null);
 
-    // Get business info if user belongs to a business
-    let business = null;
-    if (user.business_id) {
-      try {
-        business = await db.prepare('SELECT id, name FROM businesses WHERE id = $1').get(user.business_id);
-      } catch (error) {
-        console.error('Error fetching business:', error);
-      }
-    }
+    const [, business] = await Promise.all([sessionInsert, businessLookup]);
+
+    db.prepare('UPDATE users SET last_login = NOW() WHERE id = $1').run(user.id).catch((error) => {
+      console.error('Failed to update last login:', error.message);
+    });
 
     res.json({
       success: true,
@@ -297,32 +338,19 @@ router.post('/login', loginLimiter, async (req, res) => {
 // Verify token (middleware) - ASYNC for PostgreSQL
 export async function verifyToken(req, res, next) {
   try {
-    // Extract token from Authorization header only (security: no query string)
-    const authHeader = req.headers.authorization || req.headers.Authorization;
-    const token = authHeader?.replace(/^Bearer\s+/i, '') || authHeader?.replace(/^bearer\s+/i, '');
+    const token = bearerToken(req);
 
     if (!token) {
       return res.status(401).json({ error: 'No token provided' });
     }
 
-    // Try to find session with exact token match (async)
-    let session = await db.prepare(`
-      SELECT s.*, u.username, u.email, u.full_name, u.role, u.is_active, u.business_id
-      FROM sessions s
-      JOIN users u ON s.user_id = u.id
-      WHERE s.token = $1
-    `).get(token);
-    
-    // If no exact match, try trimmed token (in case of whitespace issues)
-    if (!session && token) {
+    let session = readCachedSession(token);
+    const fromCache = Boolean(session);
+    if (!session) {
+      session = await db.prepare(SESSION_SQL).get(token);
       const trimmedToken = token.trim();
-      if (trimmedToken !== token) {
-        session = await db.prepare(`
-          SELECT s.*, u.username, u.email, u.full_name, u.role, u.is_active, u.business_id
-          FROM sessions s
-          JOIN users u ON s.user_id = u.id
-          WHERE s.token = $1
-        `).get(trimmedToken);
+      if (!session && trimmedToken !== token) {
+        session = await db.prepare(SESSION_SQL).get(trimmedToken);
       }
     }
 
@@ -331,11 +359,14 @@ export async function verifyToken(req, res, next) {
     const inactive = session ? !session.is_active : false;
     
     if (!session || expired || inactive) {
+      forgetCachedSession(token);
       return res.status(401).json({ 
         error: 'Invalid or expired token',
         details: !session ? 'Session not found' : expired ? 'Session expired' : 'User inactive'
       });
     }
+
+    if (!fromCache) storeCachedSession(token, session);
 
     req.user = {
       id: session.user_id,
@@ -346,8 +377,9 @@ export async function verifyToken(req, res, next) {
       businessId: session.business_id,
     };
     req.sessionId = session.id;
-    
-    // All users are restricted to their business_id
+    req.business = session.business_name
+      ? { id: session.business_id, name: session.business_name }
+      : null;
 
     next();
   } catch (error) {
@@ -357,27 +389,18 @@ export async function verifyToken(req, res, next) {
 }
 
 // Get current user
-router.get('/me', verifyToken, async (req, res) => {
-  try {
-    let business = null;
-    if (req.user.businessId) {
-      business = await db.prepare('SELECT id, name FROM businesses WHERE id = $1').get(req.user.businessId);
-    }
-  
-    res.json({
-      success: true,
-      user: req.user,
-      business: business ? { id: business.id, name: business.name } : null,
-    });
-  } catch (error) {
-    console.error('Error fetching user:', error);
-    res.status(500).json({ error: 'Failed to fetch user' });
-  }
+router.get('/me', verifyToken, (req, res) => {
+  res.json({
+    success: true,
+    user: req.user,
+    business: req.business || null,
+  });
 });
 
 // Logout
 router.post('/logout', verifyToken, async (req, res) => {
   try {
+    forgetCachedSession(bearerToken(req));
     await db.prepare('DELETE FROM sessions WHERE id = $1').run(req.sessionId);
     res.json({ success: true });
   } catch (error) {

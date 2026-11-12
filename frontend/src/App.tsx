@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { Product, Sale, StockHistory, StockBatch, GoodsInventory } from './types';
 import { dataService } from './utils/dataService';
 import { exportProductsToCSV, exportSalesToCSV, exportInventoryToCSV } from './utils/export';
@@ -17,13 +17,11 @@ import StockHistoryView from './components/StockHistoryView';
 import AlertsPanel from './components/AlertsPanel';
 import SalesAnalytics from './components/SalesAnalytics';
 import SuccessToast from './components/SuccessToast';
-import RevenueCharts from './components/RevenueCharts';
 import AdvancedFilters, { FilterState } from './components/AdvancedFilters';
 import SettingsPanel, { UserSettings } from './components/SettingsPanel';
 import CustomerManagement from './components/CustomerManagement';
 import CategoryManager from './components/CategoryManager';
 import AdvancedAnalytics from './components/AdvancedAnalytics';
-import QRCodeGenerator from './components/QRCodeGenerator';
 import InventoryOptimization from './components/InventoryOptimization';
 import FinancialManager from './components/FinancialManager';
 import MobileInstallPrompt from './components/MobileInstallPrompt';
@@ -36,8 +34,10 @@ import UserManagement from './components/UserManagement';
 import ThemeToggle from './components/ThemeToggle';
 import { useAuth } from './contexts/AuthContext';
 import { notificationService } from './utils/notifications';
-import { generateSalesReport, generateFinancialReport } from './utils/pdfReports';
 import { CURRENCIES } from './constants/currencies';
+
+const RevenueCharts = lazy(() => import('./components/RevenueCharts'));
+const QRCodeGenerator = lazy(() => import('./components/QRCodeGenerator'));
 
 type ViewMode = 'products' | 'sales';
 
@@ -205,27 +205,16 @@ function App() {
         
         // Load currency
         // Debug logging removed
-        const currency = await dataService.getCurrency();
+        const [currency, loadedProducts, loadedSales, loadedInventories] = await Promise.all([
+          dataService.getCurrency(),
+          dataService.getProducts(),
+          dataService.getSales(),
+          dataService.getInventories(),
+        ]);
         setGlobalCurrency(currency);
-        console.log('Currency loaded:', currency);
-        
-        // Load products
-        console.log('Loading products...');
-        const loadedProducts = await dataService.getProducts();
         setProducts(loadedProducts);
-        console.log('Products loaded:', loadedProducts.length);
-        
-        // Load sales
-        console.log('Loading sales...');
-        const loadedSales = await dataService.getSales();
         setSales(loadedSales);
-        console.log('Sales loaded:', loadedSales.length);
-        
-        // Load inventories
-        console.log('Loading inventories...');
-        const loadedInventories = await dataService.getInventories();
         setGoodsInventories(loadedInventories);
-        console.log('Inventories loaded:', loadedInventories.length);
         
         console.log('All data loaded successfully!');
       } catch (error) {
@@ -856,7 +845,13 @@ function App() {
                     </svg>
                   </button>
                   <button
-                    onClick={() => generateSalesReport(sales, { title: 'Sales Report', currency: globalCurrency })}
+                    onClick={() => {
+                      import('./utils/pdfReports').then(({ generateSalesReport }) => {
+                        generateSalesReport(sales, { title: 'Sales Report', currency: globalCurrency });
+                      }).catch(() => {
+                        alert('Could not build the PDF. Try again.');
+                      });
+                    }}
                     className="btn-icon hidden md:flex"
                     title="Generate PDF Sales Report"
                   >
@@ -865,7 +860,13 @@ function App() {
                     </svg>
                   </button>
                   <button
-                    onClick={() => generateFinancialReport(sales, { title: 'Financial Report', currency: globalCurrency })}
+                    onClick={() => {
+                      import('./utils/pdfReports').then(({ generateFinancialReport }) => {
+                        generateFinancialReport(sales, { title: 'Financial Report', currency: globalCurrency });
+                      }).catch(() => {
+                        alert('Could not build the PDF. Try again.');
+                      });
+                    }}
                     className="btn-icon hidden md:flex"
                     title="Generate PDF Financial Report"
                   >
@@ -1481,7 +1482,9 @@ function App() {
             />
 
             {/* QR Code Generator */}
-            <QRCodeGenerator products={products} />
+            <Suspense fallback={null}>
+              <QRCodeGenerator products={products} />
+            </Suspense>
           </>
         )}
 
@@ -1530,7 +1533,9 @@ function App() {
               sales={sales}
             />
 
-            <RevenueCharts sales={getFilteredSales} globalCurrency={globalCurrency} revenueViewMode={revenueViewMode} />
+            <Suspense fallback={null}>
+              <RevenueCharts sales={getFilteredSales} globalCurrency={globalCurrency} revenueViewMode={revenueViewMode} />
+            </Suspense>
             
             <AdvancedAnalytics sales={getFilteredSales} products={products} globalCurrency={globalCurrency} />
             

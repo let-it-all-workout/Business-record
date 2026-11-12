@@ -87,21 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (credentials: LoginCredentials) => {
     try {
       const loginUrl = `${API_BASE_URL}/auth/login`;
-      
-      // Test backend connectivity first
-      try {
-        const healthUrl = `${API_BASE_URL}/health`;
-        const healthCheck = await fetch(healthUrl, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-        });
-        if (!healthCheck.ok) {
-          throw new Error('Health check failed');
-        }
-      } catch (healthError) {
-        throw new Error('Error: try again later');
-      }
-      
+
       const response = await fetch(loginUrl, {
         method: 'POST',
         headers: {
@@ -133,13 +119,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role: data.user.role,
         token: data.token,
         expiresAt: data.expiresAt,
-      });
-      
-      // Try to verify session in background (non-blocking)
-      // This will update user state if /auth/me succeeds, but won't block if it fails
-      verifySession(data.token).catch(err => {
-        console.warn('[AuthContext] Background session verification failed (non-critical):', err);
-        // Don't clear user state - we already have it from login response
       });
     } catch (error) {
       // Don't log sensitive error details in production

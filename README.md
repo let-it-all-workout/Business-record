@@ -66,6 +66,8 @@ The current host is **Render** for the web service and **Neon** for Postgres. Ne
 
 Do not set `NODE_ENV` in the Render dashboard. `npm start` sets it. Setting it earlier makes the UI build skip Vite.
 
-`/api/health` shows that the site is up. It does not prove Neon accepted the password. After deploy, the Render logs should include `Connected to PostgreSQL database` and `PostgreSQL schema initialized`.
+`/api/health` shows that the site is up. It does not prove Neon accepted the password. After deploy, the Render logs should include `Connected to PostgreSQL database` and either `PostgreSQL schema already present` or `PostgreSQL schema initialized`.
+
+The free Render service sleeps after about 15 minutes with no visits, and Neon sleeps after about 5 minutes with no queries. The first open after that pause waits while the host wakes up. While the web service is awake it pings Postgres so the next click does not wait on a sleeping database. Lists load in a few queries instead of one query per row.
 
 The same build and start commands work on any host that runs Node and sets `PORT` and `DATABASE_URL`. `railway.json` is the optional Railway config for that same one-process layout.

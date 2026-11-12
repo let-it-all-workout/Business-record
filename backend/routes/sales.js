@@ -126,46 +126,58 @@ router.get('/', verifyToken, async (req, res) => {
       ORDER BY date DESC
     `).all(filter.businessId);
 
-    // Get batch details and refund history for each sale (async)
-    const salesWithDetails = await Promise.all(
-      sales.map(async (sale) => {
-        const batchDetails = (await db.prepare(`
-          SELECT batch_id, quantity, purchase_price 
-          FROM sale_batch_details 
-          WHERE sale_id = $1
-        `).all(sale.id)).map(bd => ({
-          batchId: bd.batch_id,
-          quantity: bd.quantity,
-          purchasePrice: bd.purchase_price,
-        }));
+    const ids = sales.map((sale) => sale.id);
+    const [batchRows, refundRows] = ids.length === 0 ? [[], []] : await Promise.all([
+      db.prepare(`
+        SELECT sale_id, batch_id, quantity, purchase_price
+        FROM sale_batch_details
+        WHERE sale_id = ANY($1::uuid[])
+      `).all(ids),
+      db.prepare(`
+        SELECT sale_id, date, quantity
+        FROM refund_history
+        WHERE sale_id = ANY($1::uuid[])
+        ORDER BY date ASC
+      `).all(ids),
+    ]);
 
-        const refundHistory = (await db.prepare(`
-          SELECT date, quantity FROM refund_history WHERE sale_id = $1 ORDER BY date ASC
-        `).all(sale.id)).map(rh => ({
-          date: rh.date,
-          quantity: rh.quantity,
-        }));
+    const batchesBySale = new Map();
+    for (const row of batchRows) {
+      const list = batchesBySale.get(row.sale_id);
+      const detail = {
+        batchId: row.batch_id,
+        quantity: row.quantity,
+        purchasePrice: row.purchase_price,
+      };
+      if (list) list.push(detail);
+      else batchesBySale.set(row.sale_id, [detail]);
+    }
+    const refundsBySale = new Map();
+    for (const row of refundRows) {
+      const list = refundsBySale.get(row.sale_id);
+      const detail = { date: row.date, quantity: row.quantity };
+      if (list) list.push(detail);
+      else refundsBySale.set(row.sale_id, [detail]);
+    }
 
-        return {
-          id: sale.id,
-          productId: sale.product_id,
-          productName: sale.product_name,
-          inventoryId: sale.inventory_id,
-          goodId: sale.good_id,
-          quantity: sale.quantity,
-          sellingPrice: sale.selling_price,
-          purchasePrice: sale.purchase_price,
-          profit: sale.profit,
-          currency: sale.currency,
-          date: sale.date,
-          refunded: sale.refunded === true || sale.refunded === 1,
-          refundedQuantity: sale.refunded_quantity,
-          refundDate: sale.refund_date,
-          refundHistory,
-          batchDetails,
-        };
-      })
-    );
+    const salesWithDetails = sales.map((sale) => ({
+      id: sale.id,
+      productId: sale.product_id,
+      productName: sale.product_name,
+      inventoryId: sale.inventory_id,
+      goodId: sale.good_id,
+      quantity: sale.quantity,
+      sellingPrice: sale.selling_price,
+      purchasePrice: sale.purchase_price,
+      profit: sale.profit,
+      currency: sale.currency,
+      date: sale.date,
+      refunded: sale.refunded === true || sale.refunded === 1,
+      refundedQuantity: sale.refunded_quantity,
+      refundDate: sale.refund_date,
+      refundHistory: refundsBySale.get(sale.id) || [],
+      batchDetails: batchesBySale.get(sale.id) || [],
+    }));
 
     res.json(salesWithDetails);
   } catch (error) {
